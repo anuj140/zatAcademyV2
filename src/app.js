@@ -1,14 +1,17 @@
 const express = require("express");
 const cors = require("cors");
-const helmet = require("helmet");
+// const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const mongoSanitize = require("express-mongo-sanitize");
-const xss = require("xss-clean");
+// const mongoSanitize = require("express-mongo-sanitize");
+// const xss = require("xss-clean");
 const connectDB = require("./config/database");
 
 // Route files
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
+const courseRoutes = require("./routes/course.routes"); // NEW
+const batchRoutes = require("./routes/batch.routes"); // NEW
+const enrollmentRoutes = require("./routes/enrollment.routes"); // NEW
 
 const app = express();
 
@@ -16,7 +19,7 @@ const app = express();
 connectDB();
 
 // Security middleware
-app.use(helmet());
+// app.use(helmet());
 
 // Rate limiting
 const limiter = rateLimit({
@@ -41,6 +44,9 @@ app.use(cors());
 // Mount routers
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/courses", courseRoutes); // NEW
+app.use("/api/v1/batches", batchRoutes); // NEW
+app.use("/api/v1/enrollments", enrollmentRoutes); // NEW
 
 // Health check route
 app.get("/health", (req, res) => {
@@ -61,6 +67,8 @@ app.use("/*splat", (req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
+  console.log("The Global error handler is working...");
+  console.log(err);
   console.error(err.stack);
 
   res.status(err.statusCode || 500).json({
