@@ -2,7 +2,7 @@ const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const path = require("path");
-require('dotenv').config()
+require("dotenv").config();
 
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
@@ -117,8 +117,8 @@ const uploadRecording = multer({
 const fileFilter = (req, file, cb) => {
   // Accept images only
   if (!file.originalname.match(/\.(jpg|JPG|jpeg|JPEG|png|PNG|gif|GIF|webp|WEBP)$/)) {
-    req.fileValidationError = 'Only image files are allowed!';
-    return cb(new Error('Only image files are allowed!'), false);
+    req.fileValidationError = "Only image files are allowed!";
+    return cb(new Error("Only image files are allowed!"), false);
   }
   cb(null, true);
 };
@@ -127,8 +127,8 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_UPLOAD) * 1024 * 1024 // 5MB
-  }
+    fileSize: parseInt(process.env.MAX_FILE_UPLOAD) * 1024 * 1024, // 5MB
+  },
 });
 
 // Upload single image
@@ -164,6 +164,7 @@ exports.handleUploadError = (err, req, res, next) => {
   }
 
   if (err) {
+    console.log("err in uploadSession file: ", err);
     return res.status(500).json({
       success: false,
       message: "Error uploading file: " + err.message,
