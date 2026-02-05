@@ -138,6 +138,51 @@ exports.uploadThumbnail = upload.single("thumbnail");
 exports.uploadSessionMaterial = uploadSessionMaterial.single("file");
 exports.uploadRecording = uploadRecording.single("recording");
 
+// Configure Cloudinary storage for doubt attachments
+const doubtAttachmentsStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'alma-better/doubt-attachments',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'txt', 'zip'],
+    resource_type: 'auto',
+    transformation: [{ width: 800, crop: 'limit' }]
+  }
+});
+
+// File filter for doubt attachments
+const doubtAttachmentsFilter = (req, file, cb) => {
+  const allowedMimes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'application/zip'
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    req.fileValidationError = 'Invalid file type for doubt attachment';
+    cb(new Error('Invalid file type'), false);
+  }
+};
+
+// Create upload instance for doubt attachments
+const uploadDoubtAttachment = multer({
+  storage: doubtAttachmentsStorage,
+  fileFilter: doubtAttachmentsFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB
+  }
+});
+
+// Export new middleware
+exports.uploadDoubtAttachments = uploadDoubtAttachment.array('attachments', 5); // Max 5 files
+
 // Error handling middleware
 exports.handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {

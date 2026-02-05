@@ -1,10 +1,11 @@
 const express = require("express");
 const cors = require("cors");
-// const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
-// const mongoSanitize = require("express-mongo-sanitize");
-// const xss = require("xss-clean");
+// const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+// const mongoSanitize = require('express-mongo-sanitize');
+// const xss = require('xss-clean');
 const connectDB = require("./config/database");
+const cron = require("node-cron");
 
 // Route files
 const authRoutes = require("./routes/auth.routes");
@@ -13,11 +14,14 @@ const courseRoutes = require("./routes/course.routes");
 const batchRoutes = require("./routes/batch.routes");
 const enrollmentRoutes = require("./routes/enrollment.routes");
 const liveSessionRoutes = require("./routes/liveSession.routes");
-const sessionMaterialRoutes = require("./routes/liveSessionMaterial.routes");
-const learningMaterialRoutes = require("./routes/learningMaterial.routes"); // NEW
-const assignmentRoutes = require("./routes/assignment.routes"); // NEW
-const submissionRoutes = require("./routes/submission.routes"); // NEW
-const gradeRoutes = require("./routes/grade.routes"); // NEW
+const sessionMaterialRoutes = require("./routes/liveSession.routes");
+const learningMaterialRoutes = require("./routes/learningMaterial.routes");
+const assignmentRoutes = require("./routes/assignment.routes");
+const submissionRoutes = require("./routes/submission.routes");
+const gradeRoutes = require("./routes/grade.routes");
+const doubtRoutes = require("./routes/doubt.routes"); // NEW
+const progressRoutes = require("./routes/progress.routes"); // NEW
+const analyticsRoutes = require("./routes/analytics.routes"); // NEW
 
 const app = express();
 
@@ -55,10 +59,13 @@ app.use("/api/v1/batches", batchRoutes);
 app.use("/api/v1/enrollments", enrollmentRoutes);
 app.use("/api/v1/live-sessions", liveSessionRoutes);
 app.use("/api/v1/session-materials", sessionMaterialRoutes);
-app.use("/api/v1/learning-materials", learningMaterialRoutes); // NEW
-app.use("/api/v1/assignments", assignmentRoutes); // NEW
-app.use("/api/v1/submissions", submissionRoutes); // NEW
-app.use("/api/v1/grades", gradeRoutes); // NEW
+app.use("/api/v1/learning-materials", learningMaterialRoutes);
+app.use("/api/v1/assignments", assignmentRoutes);
+app.use("/api/v1/submissions", submissionRoutes);
+app.use("/api/v1/grades", gradeRoutes);
+app.use("/api/v1/doubts", doubtRoutes); // NEW
+app.use("/api/v1/progress", progressRoutes); // NEW
+app.use("/api/v1/analytics", analyticsRoutes); // NEW
 
 // Health check route
 app.get("/health", (req, res) => {
@@ -66,7 +73,7 @@ app.get("/health", (req, res) => {
     success: true,
     message: "Server is running",
     timestamp: new Date().toISOString(),
-    phase: 3,
+    phase: 4,
   });
 });
 
@@ -88,5 +95,31 @@ app.use((err, req, res, next) => {
     stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
   });
 });
+
+// Scheduled jobs (run daily at midnight)
+if (process.env.NODE_ENV === "production") {
+  cron.schedule("0 0 * * *", async () => {
+    try {
+      console.log("Running scheduled analytics jobs...");
+
+      // Auto-close old doubts
+      const Doubt = require("./models/Doubt");
+      await Doubt.autoCloseOldDoubts(30);
+
+      // Recalculate progress for all active batches
+      const Progress = require("./models/Progress");
+      const Batch = require("./models/Batch");
+
+      const activeBatches = await Batch.find({ isActive: true });
+      for (const batch of activeBatches) {
+        await Progress.calculateForBatch(batch._id);
+      }
+
+      console.log("Scheduled jobs completed");
+    } catch (error) {
+      console.error("Error in scheduled jobs:", error);
+    }
+  });
+}
 
 module.exports = app;
