@@ -1,4 +1,4 @@
-const progressService = require("../services/progressService");
+const progressService = require("../services/ProgressService");
 const Progress = require("../models/Progress");
 const Enrollment = require("../models/Enrollment");
 
