@@ -11,7 +11,7 @@ exports.createLearningMaterial = async (req, res) => {
   try {
     const { batchId } = req.params;
 
-    let jsonPayload = JSON.parse(req.body.jsonData);
+    // let jsonPayload = JSON.parse(req.body.jsonData);
 
     // Check batch exists and user is instructor
     const batch = await Batch.findById(batchId);
@@ -34,7 +34,7 @@ exports.createLearningMaterial = async (req, res) => {
     }
 
     let materialData = {
-      ...jsonPayload,
+      ...req.body,
       batch: batchId,
       course: batch.course,
       createdBy: req.user.id,
