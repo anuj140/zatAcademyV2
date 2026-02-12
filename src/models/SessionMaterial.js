@@ -91,9 +91,8 @@ sessionMaterialSchema.index({ batch: 1, createdAt: -1 });
 sessionMaterialSchema.index({ availableFrom: 1, availableUntil: 1 });
 
 // Update timestamp
-sessionMaterialSchema.pre('findOneAndUpdate', function(next) {
+sessionMaterialSchema.pre('findOneAndUpdate', async function() {
   this.set({ updatedAt: Date.now() });
-  next();
 });
 
 // Virtual for checking availability
