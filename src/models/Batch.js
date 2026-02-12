@@ -35,6 +35,19 @@ const batchSchema = new mongoose.Schema({
     required: [true, "Please provide batch start date"],
     validate: {
       validator: function (value) {
+        // 1. Get the update object from Mongoose
+        const update = this.getUpdate ? this.getUpdate() : null;
+        console.log("update: ", update);
+        console.log("this.getUpdate: ", this.getUpdate);
+
+        // 2. Check if a new startDate is being provided in this update
+        const startDate = update && update.startDate ? update.startDate : this.startDate;
+        console.log("startDate: ", startDate);
+        console.log("this.startDate: ", this.startDate);
+        console.log("update.startDate: ", this.startDate);
+
+        // 3. Perform the comparison
+        if (!startDate) return true; // Skip if we can't find a start date to compare
         return value > new Date();
       },
       message: "Start date must be in the future",

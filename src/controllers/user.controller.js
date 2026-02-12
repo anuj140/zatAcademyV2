@@ -103,7 +103,6 @@ exports.getUser = async (req, res) => {
 // @desc    Update user
 // @route   PUT /api/v1/users/:id
 // @access  Private/Admin
-//TODO: This controller simply takes input without validating and santizing 
 exports.updateUser = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(req.params.id, req.body, {
