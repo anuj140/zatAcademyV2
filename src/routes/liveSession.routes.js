@@ -15,7 +15,6 @@ const { protect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const {
   canJoinSession,
-  instructorOnly,
   validateSessionToken,
 } = require("../middleware/videoAuth");
 const {

@@ -1,6 +1,6 @@
-const Batch = require('../models/Batch');
-const Course = require('../models/Course');
-const User = require('../models/User');
+const Batch = require("../models/Batch");
+const Course = require("../models/Course");
+const User = require("../models/User");
 
 // @desc    Create new batch
 // @route   POST /api/v1/batches
@@ -12,34 +12,34 @@ exports.createBatch = async (req, res) => {
     if (!course) {
       return res.status(404).json({
         success: false,
-        message: 'Course not found'
+        message: "Course not found",
       });
     }
-    
+
     // Check if instructor exists and is actually an instructor
     const instructor = await User.findById(req.body.instructor);
-    if (!instructor || instructor.role !== 'instructor') {
+    if (!instructor || instructor.role !== "instructor") {
       return res.status(400).json({
         success: false,
-        message: 'Invalid instructor selected'
+        message: "Invalid instructor selected",
       });
     }
-    
+
     const batchData = {
       ...req.body,
-      createdBy: req.user.id
+      createdBy: req.user.id,
     };
-    
+
     const batch = await Batch.create(batchData);
-    
+
     res.status(201).json({
       success: true,
-      data: batch
+      data: batch,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -50,52 +50,52 @@ exports.createBatch = async (req, res) => {
 exports.getBatches = async (req, res) => {
   try {
     let query;
-    
+
     // Admin can see all batches
-    if (req.user.role === 'admin' || req.user.role === 'superAdmin') {
-      query = Batch.find().populate('course instructor');
-    } 
+    if (req.user.role === "admin" || req.user.role === "superAdmin") {
+      query = Batch.find().populate("course instructor");
+    }
     // Instructor can see only their batches
-    else if (req.user.role === 'instructor') {
-      query = Batch.find({ instructor: req.user.id }).populate('course instructor');
+    else if (req.user.role === "instructor") {
+      query = Batch.find({ instructor: req.user.id }).populate("course instructor");
     }
     // Student can see active, non-full batches
-    else if (req.user.role === 'student') {
+    else if (req.user.role === "student") {
       query = Batch.find({
         isActive: true,
         isFull: false,
-        startDate: { $gt: new Date() } // Not started yet
-      }).populate('course instructor');
+        startDate: { $gt: new Date() }, // Not started yet
+      }).populate("course instructor");
     }
-    
+
     // Filter by course if provided
     if (req.query.course) {
       query.find({ course: req.query.course });
     }
-    
+
     // Filter by status
-    if (req.query.status === 'upcoming') {
+    if (req.query.status === "upcoming") {
       query.find({ startDate: { $gt: new Date() } });
-    } else if (req.query.status === 'ongoing') {
-      query.find({ 
+    } else if (req.query.status === "ongoing") {
+      query.find({
         startDate: { $lte: new Date() },
-        endDate: { $gte: new Date() }
+        endDate: { $gte: new Date() },
       });
-    } else if (req.query.status === 'completed') {
+    } else if (req.query.status === "completed") {
       query.find({ endDate: { $lt: new Date() } });
     }
-    
+
     const batches = await query;
-    
+
     res.status(200).json({
       success: true,
       count: batches.length,
-      data: batches
+      data: batches,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -105,39 +105,43 @@ exports.getBatches = async (req, res) => {
 // @access  Private
 exports.getBatch = async (req, res) => {
   try {
-    const batch = await Batch.findById(req.params.id)
-      .populate('course instructor');
-    
+    console.log("getBatch controller is called!");
+    const batch = await Batch.findById(req.params.id).populate("course instructor");
+    console.log("batch: ", batch);
+
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: 'Batch not found'
+        message: "Batch not found",
       });
     }
-    
+
     // Authorization checks
-    if (req.user.role === 'student' && (!batch.isActive || batch.isFull)) {
+    if (req.user.role === "student" && (!batch.isActive || batch.isFull)) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to access this batch'
+        message: "Not authorized to access this batch",
       });
     }
-    
-    if (req.user.role === 'instructor' && batch.instructor._id.toString() !== req.user.id) {
+
+    if (
+      req.user.role === "instructor" &&
+      batch.instructor._id.toString() !== req.user.id
+    ) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to access this batch'
+        message: "Not authorized to access this batch",
       });
     }
-    
+
     res.status(200).json({
       success: true,
-      data: batch
+      data: batch,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -148,38 +152,38 @@ exports.getBatch = async (req, res) => {
 exports.updateBatch = async (req, res) => {
   try {
     let batch = await Batch.findById(req.params.id);
-    
+
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: 'Batch not found'
+        message: "Batch not found",
       });
     }
-    
+
     // Check if trying to update instructor
     if (req.body.instructor && req.body.instructor !== batch.instructor.toString()) {
       const instructor = await User.findById(req.body.instructor);
-      if (!instructor || instructor.role !== 'instructor') {
+      if (!instructor || instructor.role !== "instructor") {
         return res.status(400).json({
           success: false,
-          message: 'Invalid instructor selected'
+          message: "Invalid instructor selected",
         });
       }
     }
-    
+
     batch = await Batch.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
-      runValidators: true
-    }).populate('course instructor');
-    
+      runValidators: true,
+    }).populate("course instructor");
+
     res.status(200).json({
       success: true,
-      data: batch
+      data: batch,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -190,32 +194,32 @@ exports.updateBatch = async (req, res) => {
 exports.deleteBatch = async (req, res) => {
   try {
     const batch = await Batch.findById(req.params.id);
-    
+
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: 'Batch not found'
+        message: "Batch not found",
       });
     }
-    
+
     // Check if batch has students enrolled
     if (batch.currentStudents > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete batch with enrolled students'
+        message: "Cannot delete batch with enrolled students",
       });
     }
-    
+
     await batch.deleteOne();
-    
+
     res.status(200).json({
       success: true,
-      message: 'Batch deleted successfully'
+      message: "Batch deleted successfully",
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -226,34 +230,34 @@ exports.deleteBatch = async (req, res) => {
 exports.toggleActive = async (req, res) => {
   try {
     const batch = await Batch.findById(req.params.id);
-    
+
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: 'Batch not found'
+        message: "Batch not found",
       });
     }
-    
+
     // Can't deactivate batch that has started
     if (!batch.isActive && batch.startDate <= new Date()) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot deactivate batch that has already started'
+        message: "Cannot deactivate batch that has already started",
       });
     }
-    
+
     batch.isActive = !batch.isActive;
     await batch.save();
-    
+
     res.status(200).json({
       success: true,
-      message: `Batch ${batch.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: batch
+      message: `Batch ${batch.isActive ? "activated" : "deactivated"} successfully`,
+      data: batch,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -264,40 +268,40 @@ exports.toggleActive = async (req, res) => {
 exports.getBatchesByCourse = async (req, res) => {
   try {
     const course = await Course.findById(req.params.courseId);
-    
+
     if (!course) {
       return res.status(404).json({
         success: false,
-        message: 'Course not found'
+        message: "Course not found",
       });
     }
-    
+
     // Students can only see active, non-full batches
     const query = Batch.find({
       course: req.params.courseId,
       isActive: true,
-      isFull: false
-    }).populate('instructor', 'name email');
-    
-    if (req.user?.role === 'admin' || req.user?.role === 'superAdmin') {
+      isFull: false,
+    }).populate("instructor", "name email");
+
+    if (req.user?.role === "admin" || req.user?.role === "superAdmin") {
       // Admin can see all batches
       query.find({});
     }
-    
+
     const batches = await query;
-    
+
     res.status(200).json({
       success: true,
       count: batches.length,
       data: {
         course,
-        batches
-      }
+        batches,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
