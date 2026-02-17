@@ -40,6 +40,28 @@ exports.createLearningMaterial = async (req, res) => {
       createdBy: req.user.id,
     };
 
+    if (req.body.moduleId) {
+      const Module = require("../models/Module");
+      const module = await Module.findOne({
+        _id: req.body.moduleId,
+        batch: batchId,
+      });
+
+      if (!module) {
+        return res.status(404).json({
+          success: false,
+          message: "Module not found in this batch",
+        });
+      }
+
+      materialData.module = req.body.moduleId;
+
+      // If module is provided, week becomes optional
+      if (!materialData.week && module.weekNumber) {
+        materialData.week = module.weekNumber;
+      }
+    }
+
     // Handle file upload
     if (req.file) {
       materialData.file = {
@@ -61,6 +83,21 @@ exports.createLearningMaterial = async (req, res) => {
     }
 
     const material = await LearningMaterial.create(materialData);
+
+    // NEW: Automatically add to module if specified
+    if (materialData.module) {
+      const Module = require("../models/Module");
+      const module = await Module.findById(materialData.module);
+
+      await module.addItem({
+        itemType: "learning_material",
+        itemId: material._id,
+        itemModel: "LearningMaterial",
+        title: material.title,
+        isRequired: true,
+        estimatedDuration: material.estimatedTime || 60,
+      });
+    }
 
     res.status(201).json({
       success: true,

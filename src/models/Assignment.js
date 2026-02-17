@@ -30,10 +30,11 @@ const assignmentSchema = new mongoose.Schema(
     // Organization
     week: {
       type: Number,
-      required: true,
     },
-    module: String,
-
+    module: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Module",
+    },
     // Grading
     maxMarks: {
       type: Number,
@@ -230,6 +231,28 @@ assignmentSchema.post("save", async function () {
   await Batch.findByIdAndUpdate(this.batch, {
     $set: { assignmentCount },
   });
+
+  if (this.module) {
+    const Module = mongoose.model("Module");
+    const module = await Module.findById(this.module);
+
+    if (module) {
+      const itemIndex = module.items.findIndex(
+        (item) => item.itemId.toString() === this._id.toString(),
+      );
+
+      if (itemIndex !== -1) {
+        module.items[itemIndex].title = this.title;
+        module.items[itemIndex].dueDate = this.deadline;
+        module.items[itemIndex].metadata = {
+          originalTitle: this.title,
+          maxMarks: this.maxMarks,
+          isPublished: this.isPublished,
+        };
+        await module.save();
+      }
+    }
+  }
 });
 
 module.exports = mongoose.model("Assignment", assignmentSchema);

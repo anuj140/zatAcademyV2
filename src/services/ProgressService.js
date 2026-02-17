@@ -97,7 +97,7 @@ class ProgressService {
 
       const dashboard = {
         overallStats: {
-          totalBatches: enrollments.length,//! Total enrollment is !== batches (remove)
+          totalBatches: enrollments.length, //! Total enrollment is !== batches (remove)
           batchesInProgress: 0,
           batchesCompleted: 0,
           averageProgress: 0,
@@ -122,7 +122,26 @@ class ProgressService {
           progress = await this.calculateStudentProgress(studentId, enrollment.batch._id);
         }
 
-        // Add to batch progress
+        const Module = require("../models/Module");
+        const modules = await Module.find({
+          batch: enrollment.batch._id,
+          isPublished: true,
+        }).sort({ order: 1 });
+
+        const moduleProgressDetails = modules.map((module) => {
+          const modProgress = progress.moduleProgress?.find(
+            (mp) => mp.module.toString() === module._id.toString(),
+          );
+
+          return {
+            moduleId: module._id,
+            moduleTitle: module.title,
+            completionPercentage: modProgress?.completionPercentage || 0,
+            completedItems: modProgress?.completedItems || 0,
+            totalItems: modProgress?.totalItems || 0,
+          };
+        });
+
         dashboard.batchProgress.push({
           batchId: enrollment.batch._id,
           batchName: enrollment.batch.name,
@@ -134,6 +153,7 @@ class ProgressService {
           materialProgress: progress.materialCompletionPercentage,
           attendance: progress.attendancePercentage,
           assignmentProgress: progress.assignmentCompletionPercentage,
+          moduleProgress: moduleProgressDetails, // NEW
           isAtRisk: progress.isAtRisk,
           lastActive: progress.lastActive,
         });
@@ -396,7 +416,7 @@ class ProgressService {
       if (materialIndex === -1) {
         // Add new material progress entry
         //5. Push provided materialId into that materialProgress array
-         console.log(
+        console.log(
           "progress.materialProgress[materialIndex]: ",
           progress.materialProgress[materialIndex],
         ); // clg

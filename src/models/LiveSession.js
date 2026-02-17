@@ -57,6 +57,10 @@ const liveSessionSchema = new mongoose.Schema(
       enum: ["lecture", "doubt", "workshop", "assignment_review", "other"],
       default: "lecture",
     },
+    module: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Module",
+    },
     // Video Conferencing Details
     provider: {
       type: String,
@@ -166,6 +170,28 @@ liveSessionSchema.pre("save", async function () {
       this.status = "ongoing";
     } else if (now > this.endTime) {
       this.status = "completed";
+    }
+  }
+
+  if (this.module) {
+    const Module = mongoose.model("Module");
+    const module = await Module.findById(this.module);
+
+    if (module) {
+      const itemIndex = module.items.findIndex(
+        (item) => item.itemId.toString() === this._id.toString(),
+      );
+
+      if (itemIndex !== -1) {
+        module.items[itemIndex].title = this.title;
+        module.items[itemIndex].metadata = {
+          originalTitle: this.title,
+          startTime: this.startTime,
+          endTime: this.endTime,
+          status: this.status,
+        };
+        await module.save();
+      }
     }
   }
 });

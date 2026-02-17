@@ -40,12 +40,48 @@ exports.createAssignment = async (req, res) => {
       createdBy: req.user.id,
     };
 
+    if (req.body.moduleId) {
+      const Module = require("../models/Module");
+      const module = await Module.findOne({
+        _id: req.body.moduleId,
+        batch: batchId,
+      });
+
+      if (!module) {
+        return res.status(404).json({
+          success: false,
+          message: "Module not found in this batch",
+        });
+      }
+
+      assignmentData.module = req.body.moduleId;
+
+      if (!assignmentData.week && module.weekNumber) {
+        assignmentData.week = module.weekNumber;
+      }
+    }
+
     // Set passing marks if not provided (default 40%)
     if (!assignmentData.passingMarks) {
       assignmentData.passingMarks = Math.floor(assignmentData.maxMarks * 0.4);
     }
 
     const assignment = await Assignment.create(assignmentData);
+
+    if (assignmentData.module) {
+      const Module = require("../models/Module");
+      const module = await Module.findById(assignmentData.module);
+
+      await module.addItem({
+        itemType: "assignment",
+        itemId: assignment._id,
+        itemModel: "Assignment",
+        title: assignment.title,
+        isRequired: true,
+        estimatedDuration: 120, // Default 2 hours
+        dueDate: assignment.deadline,
+      });
+    }
 
     // Send notification to enrolled students if assignment is published
     if (assignment.isPublished) {

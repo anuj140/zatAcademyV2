@@ -22,6 +22,7 @@ const gradeRoutes = require("./routes/grade.routes");
 const doubtRoutes = require("./routes/doubt.routes"); // NEW
 const progressRoutes = require("./routes/progress.routes"); // NEW
 const analyticsRoutes = require("./routes/analytics.routes"); // NEW
+const moduleRoutes = require("./routes/module.routes"); // NEW
 
 const app = express();
 
@@ -66,6 +67,7 @@ app.use("/api/v1/grades", gradeRoutes);
 app.use("/api/v1/doubts", doubtRoutes); // NEW
 app.use("/api/v1/progress", progressRoutes); // NEW
 app.use("/api/v1/analytics", analyticsRoutes); // NEW
+app.use("/api/v1/modules", moduleRoutes); // New
 
 // Health check route
 app.get("/health", (req, res) => {

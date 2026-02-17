@@ -74,6 +74,22 @@ const batchSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  moduleCount: {
+    type: Number,
+    default: 0,
+  },
+  materialCount: {
+    type: Number,
+    default: 0,
+  },
+  assignmentCount: {
+    type: Number,
+    default: 0,
+  },
+  activeDoubtCount: {
+    type: Number,
+    default: 0,
+  },
   isActive: {
     type: Boolean,
     default: true,
@@ -120,6 +136,25 @@ batchSchema.virtual("hasStarted").get(function () {
 // Virtual for checking if batch has ended
 batchSchema.virtual("hasEnded").get(function () {
   return this.endDate <= new Date();
+});
+
+batchSchema.post("save", async function () {
+  // NEW: Update module count
+  const Module = mongoose.model("Module");
+  const moduleCount = await Module.countDocuments({
+    batch: this._id,
+    isPublished: true,
+  });
+
+  if (this.moduleCount !== moduleCount) {
+    await mongoose.model("Batch").findByIdAndUpdate(
+      this._id,
+      {
+        moduleCount,
+      },
+      { timestamps: false },
+    );
+  }
 });
 
 module.exports = mongoose.model("Batch", batchSchema);

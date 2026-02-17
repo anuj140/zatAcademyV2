@@ -1,234 +1,265 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const materialProgressSchema = new mongoose.Schema({
   material: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'LearningMaterial',
-    required: true
+    ref: "LearningMaterial",
+    required: true,
   },
   status: {
     type: String,
-    enum: ['not_started', 'started', 'completed', 'reviewed'],
-    default: 'not_started'
+    enum: ["not_started", "started", "completed", "reviewed"],
+    default: "not_started",
   },
   progress: {
     type: Number,
     min: 0,
     max: 100,
-    default: 0
+    default: 0,
   },
   timeSpent: {
     type: Number, // in seconds
-    default: 0
+    default: 0,
   },
   lastAccessed: Date,
   completedAt: Date,
   notes: String,
-  quizScore: Number // if material is a quiz
+  quizScore: Number, // if material is a quiz
 });
 
 const sessionAttendanceSchema = new mongoose.Schema({
   session: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'LiveSession',
-    required: true
+    ref: "LiveSession",
+    required: true,
   },
   status: {
     type: String,
-    enum: ['absent', 'present', 'late', 'excused'],
-    default: 'absent'
+    enum: ["absent", "present", "late", "excused"],
+    default: "absent",
   },
   joinedAt: Date,
   leftAt: Date,
   duration: Number, // in minutes
-  participationScore: Number // 0-100
+  participationScore: Number, // 0-100
 });
 
 const assignmentProgressSchema = new mongoose.Schema({
   assignment: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Assignment',
-    required: true
+    ref: "Assignment",
+    required: true,
   },
   submission: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Submission'
+    ref: "Submission",
   },
   status: {
     type: String,
-    enum: ['not_started', 'in_progress', 'submitted', 'graded', 'late'],
-    default: 'not_started'
+    enum: ["not_started", "in_progress", "submitted", "graded", "late"],
+    default: "not_started",
   },
   submittedAt: Date,
   gradedAt: Date,
   score: Number,
   maxScore: Number,
   percentage: Number,
-  grade: String
+  grade: String,
 });
 
-const progressSchema = new mongoose.Schema({
-  student: {
+const moduleProgressSchema = new mongoose.Schema({
+  module: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: "Module",
+    required: true,
   },
-  batch: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Batch',
-    required: true
-  },
-  course: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Course',
-  },
-  
-  // Progress tracking
-  materialProgress: [materialProgressSchema],
-  sessionAttendance: [sessionAttendanceSchema],
-  assignmentProgress: [assignmentProgressSchema],
-  
-  // Overall metrics
-  totalMaterials: {
+  completedItems: {
     type: Number,
-    default: 0
+    default: 0,
   },
-  completedMaterials: {
+  totalItems: {
     type: Number,
-    default: 0
+    default: 0,
   },
-  materialCompletionPercentage: {
+  completionPercentage: {
     type: Number,
     min: 0,
     max: 100,
-    default: 0
+    default: 0,
   },
-  
-  totalSessions: {
-    type: Number,
-    default: 0
-  },
-  attendedSessions: {
-    type: Number,
-    default: 0
-  },
-  attendancePercentage: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0
-  },
-  
-  totalAssignments: {
-    type: Number,
-    default: 0
-  },
-  submittedAssignments: {
-    type: Number,
-    default: 0
-  },
-  gradedAssignments: {
-    type: Number,
-    default: 0
-  },
-  assignmentCompletionPercentage: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0
-  },
-  
-  // Overall progress
-  overallProgress: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0
-  },
-  
-  // Time tracking
-  totalTimeSpent: {
-    type: Number, // in seconds
-    default: 0
-  },
-  averageDailyTime: {
-    type: Number, // in minutes
-    default: 0
-  },
-  lastActive: Date,
-  
-  // Performance metrics
-  averageQuizScore: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0
-  },
-  averageAssignmentScore: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0
-  },
-  consistencyScore: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0
-  },
-  
-  // Risk assessment
-  isAtRisk: {
-    type: Boolean,
-    default: false
-  },
-  riskFactors: [{
-    factor: String,
-    severity: {
-      type: String,
-      enum: ['low', 'medium', 'high']
-    },
-    detectedAt: Date
-  }],
-  lastRiskAssessment: Date,
-  
-  // Streaks and motivation
-  currentStreak: {
-    type: Number,
-    default: 0
-  },
-  longestStreak: {
-    type: Number,
-    default: 0
-  },
-  streakUpdatedAt: Date,
-  
-  // Goals and targets
-  weeklyTarget: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 70
-  },
-  isOnTrack: {
-    type: Boolean,
-    default: true
-  },
-  
-  // Metadata
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
-  lastCalculated: Date
-}, {
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  startedAt: Date,
+  completedAt: Date,
+  lastAccessedAt: Date,
 });
+
+const progressSchema = new mongoose.Schema(
+  {
+    student: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    batch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+      required: true,
+    },
+    course: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Course",
+    },
+
+    // Progress tracking
+    materialProgress: [materialProgressSchema],
+    sessionAttendance: [sessionAttendanceSchema],
+    assignmentProgress: [assignmentProgressSchema],
+    moduleProgress: [moduleProgressSchema],
+
+    // Overall metrics
+    totalMaterials: {
+      type: Number,
+      default: 0,
+    },
+    completedMaterials: {
+      type: Number,
+      default: 0,
+    },
+    materialCompletionPercentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+
+    totalSessions: {
+      type: Number,
+      default: 0,
+    },
+    attendedSessions: {
+      type: Number,
+      default: 0,
+    },
+    attendancePercentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+
+    totalAssignments: {
+      type: Number,
+      default: 0,
+    },
+    submittedAssignments: {
+      type: Number,
+      default: 0,
+    },
+    gradedAssignments: {
+      type: Number,
+      default: 0,
+    },
+    assignmentCompletionPercentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+
+    // Overall progress
+    overallProgress: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+
+    // Time tracking
+    totalTimeSpent: {
+      type: Number, // in seconds
+      default: 0,
+    },
+    averageDailyTime: {
+      type: Number, // in minutes
+      default: 0,
+    },
+    lastActive: Date,
+
+    // Performance metrics
+    averageQuizScore: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    averageAssignmentScore: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    consistencyScore: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+
+    // Risk assessment
+    isAtRisk: {
+      type: Boolean,
+      default: false,
+    },
+    riskFactors: [
+      {
+        factor: String,
+        severity: {
+          type: String,
+          enum: ["low", "medium", "high"],
+        },
+        detectedAt: Date,
+      },
+    ],
+    lastRiskAssessment: Date,
+
+    // Streaks and motivation
+    currentStreak: {
+      type: Number,
+      default: 0,
+    },
+    longestStreak: {
+      type: Number,
+      default: 0,
+    },
+    streakUpdatedAt: Date,
+
+    // Goals and targets
+    weeklyTarget: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 70,
+    },
+    isOnTrack: {
+      type: Boolean,
+      default: true,
+    },
+
+    // Metadata
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    lastCalculated: Date,
+  },
+  {
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
+);
 
 // Indexes
 progressSchema.index({ student: 1, batch: 1 }, { unique: true });
@@ -237,20 +268,20 @@ progressSchema.index({ isAtRisk: 1, batch: 1 });
 progressSchema.index({ student: 1, lastActive: -1 });
 
 // Virtuals
-progressSchema.virtual('daysSinceLastActive').get(function() {
+progressSchema.virtual("daysSinceLastActive").get(function () {
   if (!this.lastActive) return 999;
   const diff = Date.now() - this.lastActive.getTime();
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 });
 
-progressSchema.virtual('engagementScore').get(function() {
+progressSchema.virtual("engagementScore").get(function () {
   // Weighted average of different engagement metrics
   const weights = {
     attendance: 0.3,
     materialCompletion: 0.3,
-    assignmentCompletion: 0.4
+    assignmentCompletion: 0.4,
   };
-  
+
   return (
     this.attendancePercentage * weights.attendance +
     this.materialCompletionPercentage * weights.materialCompletion +
@@ -259,100 +290,104 @@ progressSchema.virtual('engagementScore').get(function() {
 });
 
 // Pre-save hooks
-progressSchema.pre('save', async function() {
+progressSchema.pre("save", async function () {
   this.updatedAt = Date.now();
-  
+
   // Calculate percentages
   if (this.totalMaterials > 0) {
-    this.materialCompletionPercentage = (this.completedMaterials / this.totalMaterials) * 100;
+    this.materialCompletionPercentage =
+      (this.completedMaterials / this.totalMaterials) * 100;
   }
-  
+
   if (this.totalSessions > 0) {
     this.attendancePercentage = (this.attendedSessions / this.totalSessions) * 100;
   }
-  
+
   if (this.totalAssignments > 0) {
-    this.assignmentCompletionPercentage = (this.submittedAssignments / this.totalAssignments) * 100;
+    this.assignmentCompletionPercentage =
+      (this.submittedAssignments / this.totalAssignments) * 100;
   }
-  
+
   // Calculate overall progress (weighted average)
   const weights = {
     materials: 0.4,
     attendance: 0.2,
-    assignments: 0.4
+    assignments: 0.4,
   };
-  
-  this.overallProgress = (
+
+  this.overallProgress =
     this.materialCompletionPercentage * weights.materials +
     this.attendancePercentage * weights.attendance +
-    this.assignmentCompletionPercentage * weights.assignments
-  );
-  
+    this.assignmentCompletionPercentage * weights.assignments;
+
   // Update risk status
   this.updateRiskAssessment();
-  
 });
 
 // Methods
-progressSchema.methods.updateRiskAssessment = function() {
+progressSchema.methods.updateRiskAssessment = function () {
   const riskFactors = [];
-  
+
   // Check attendance
   if (this.attendancePercentage < 70) {
     riskFactors.push({
-      factor: 'low_attendance',
-      severity: this.attendancePercentage < 50 ? 'high' : 'medium',
-      detectedAt: new Date()
+      factor: "low_attendance",
+      severity: this.attendancePercentage < 50 ? "high" : "medium",
+      detectedAt: new Date(),
     });
   }
-  
+
   // Check material completion
   if (this.materialCompletionPercentage < 60) {
     riskFactors.push({
-      factor: 'low_material_completion',
-      severity: this.materialCompletionPercentage < 40 ? 'high' : 'medium',
-      detectedAt: new Date()
+      factor: "low_material_completion",
+      severity: this.materialCompletionPercentage < 40 ? "high" : "medium",
+      detectedAt: new Date(),
     });
   }
-  
+
   // Check assignment submission
   if (this.assignmentCompletionPercentage < 50) {
     riskFactors.push({
-      factor: 'low_assignment_submission',
-      severity: this.assignmentCompletionPercentage < 30 ? 'high' : 'medium',
-      detectedAt: new Date()
+      factor: "low_assignment_submission",
+      severity: this.assignmentCompletionPercentage < 30 ? "high" : "medium",
+      detectedAt: new Date(),
     });
   }
-  
+
   // Check inactivity
   if (this.daysSinceLastActive > 7) {
     riskFactors.push({
-      factor: 'inactive_for_7_days',
-      severity: 'high',
-      detectedAt: new Date()
+      factor: "inactive_for_7_days",
+      severity: "high",
+      detectedAt: new Date(),
     });
   }
-  
+
   // Check if student is at risk
   this.isAtRisk = riskFactors.length > 0;
   this.riskFactors = riskFactors;
   this.lastRiskAssessment = new Date();
 };
 
-progressSchema.methods.updateStreak = function() {
+progressSchema.methods.updateStreak = function () {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const lastActiveDate = this.lastActive ? 
-    new Date(this.lastActive.getFullYear(), this.lastActive.getMonth(), this.lastActive.getDate()) : 
-    null;
-  
+  const lastActiveDate = this.lastActive
+    ? new Date(
+        this.lastActive.getFullYear(),
+        this.lastActive.getMonth(),
+        this.lastActive.getDate(),
+      )
+    : null;
+
   if (!lastActiveDate) {
     // First activity
     this.currentStreak = 1;
     this.longestStreak = 1;
   } else {
     const daysDifference = Math.floor((today - lastActiveDate) / (1000 * 60 * 60 * 24));
-    
+
     if (daysDifference === 0) {
       // Same day, streak continues
       // No change needed
@@ -364,23 +399,25 @@ progressSchema.methods.updateStreak = function() {
       this.currentStreak = 1;
     }
   }
-  
+
   // Update longest streak
   if (this.currentStreak > this.longestStreak) {
     this.longestStreak = this.currentStreak;
   }
-  
+
   this.streakUpdatedAt = now;
   this.lastActive = now;
 };
 
-// Static methods
+// src/models/Progress.js
+
 progressSchema.statics.calculateForStudent = async function(studentId, batchId) {
   const Progress = this;
   const LearningMaterial = mongoose.model('LearningMaterial');
   const LiveSession = mongoose.model('LiveSession');
   const Assignment = mongoose.model('Assignment');
   const Submission = mongoose.model('Submission');
+  const Module = mongoose.model('Module'); // NEW
   
   // Get batch materials
   const materials = await LearningMaterial.find({
@@ -436,6 +473,53 @@ progressSchema.statics.calculateForStudent = async function(studentId, batchId) 
   const submittedAssignments = assignmentProgress.filter(ap => ap.status !== 'not_started').length;
   const gradedAssignments = assignmentProgress.filter(ap => ap.status === 'graded').length;
   
+  // Get all modules for the batch
+  const modules = await Module.find({
+    batch: batchId,
+    isPublished: true
+  }).sort({ order: 1 });
+  
+  const moduleProgressArray = [];
+  
+  for (const module of modules) {
+    const moduleItemIds = module.items.map(item => item.itemId.toString());
+    
+    // Count completed items in this module
+    let completedItemsInModule = 0;
+    
+    // Check materials in this module
+    const completedMaterialsInModule = materialProgress.filter(mp => 
+      moduleItemIds.includes(mp.material.toString()) && 
+      mp.status === 'completed'
+    ).length;
+    
+    // Check assignments in this module
+    const completedAssignmentsInModule = await Submission.countDocuments({
+      student: studentId,
+      assignment: { $in: moduleItemIds },
+      status: { $in: ['submitted', 'graded'] }
+    });
+    
+    // Check sessions in this module (from sessionAttendance if exists in progress)
+    const attendedSessionsInModule = 0; // Will be updated when we have the progress object
+    
+    completedItemsInModule = completedMaterialsInModule + completedAssignmentsInModule + attendedSessionsInModule;
+    const totalItemsInModule = module.items.filter(item => item.isRequired).length;
+    
+    const moduleCompletionPercentage = totalItemsInModule > 0 ? 
+      (completedItemsInModule / totalItemsInModule) * 100 : 0;
+    
+    moduleProgressArray.push({
+      module: module._id,
+      completedItems: completedItemsInModule,
+      totalItems: totalItemsInModule,
+      completionPercentage: moduleCompletionPercentage,
+      lastAccessedAt: new Date(),
+      startedAt: completedItemsInModule > 0 ? new Date() : null,
+      completedAt: moduleCompletionPercentage === 100 ? new Date() : null
+    });
+  }
+  
   // Create or update progress record
   let progress = await Progress.findOne({ student: studentId, batch: batchId });
   
@@ -446,6 +530,7 @@ progressSchema.statics.calculateForStudent = async function(studentId, batchId) 
       course: materials[0]?.course || assignments[0]?.course,
       materialProgress,
       assignmentProgress,
+      moduleProgress: moduleProgressArray, // NEW: Add module progress
       totalMaterials: materials.length,
       completedMaterials,
       totalSessions: sessions.length,
@@ -458,6 +543,7 @@ progressSchema.statics.calculateForStudent = async function(studentId, batchId) 
   } else {
     progress.materialProgress = materialProgress;
     progress.assignmentProgress = assignmentProgress;
+    progress.moduleProgress = moduleProgressArray; // NEW: Update module progress
     progress.totalMaterials = materials.length;
     progress.completedMaterials = completedMaterials;
     progress.totalSessions = sessions.length;
@@ -466,10 +552,55 @@ progressSchema.statics.calculateForStudent = async function(studentId, batchId) 
     progress.submittedAssignments = submittedAssignments;
     progress.gradedAssignments = gradedAssignments;
     progress.lastCalculated = new Date();
+    
+    // NEW: Update session attendance in modules if progress has sessionAttendance
+    if (progress.sessionAttendance && progress.sessionAttendance.length > 0) {
+      for (const modProg of progress.moduleProgress) {
+        const module = modules.find(m => m._id.equals(modProg.module));
+        if (module) {
+          const moduleSessionIds = module.items
+            .filter(item => item.itemType === 'live_session')
+            .map(item => item.itemId.toString());
+          
+          const attendedSessionsInModule = progress.sessionAttendance.filter(sa => 
+            moduleSessionIds.includes(sa.session.toString()) && 
+            sa.status === 'present'
+          ).length;
+          
+          // Recalculate with correct session attendance
+          const completedMaterialsInModule = progress.materialProgress?.filter(mp => 
+            module.items.map(item => item.itemId.toString()).includes(mp.material.toString()) && 
+            mp.status === 'completed'
+          ).length || 0;
+          
+          const moduleItemIds = module.items.map(item => item.itemId.toString());
+          const completedAssignmentsInModule = await Submission.countDocuments({
+            student: studentId,
+            assignment: { $in: moduleItemIds },
+            status: { $in: ['submitted', 'graded'] }
+          });
+          
+          const totalCompleted = completedMaterialsInModule + completedAssignmentsInModule + attendedSessionsInModule;
+          const totalRequired = module.items.filter(item => item.isRequired).length;
+          
+          modProg.completedItems = totalCompleted;
+          modProg.totalItems = totalRequired;
+          modProg.completionPercentage = totalRequired > 0 ? (totalCompleted / totalRequired) * 100 : 0;
+          
+          if (totalCompleted > 0 && !modProg.startedAt) {
+            modProg.startedAt = new Date();
+          }
+          
+          if (modProg.completionPercentage === 100 && !modProg.completedAt) {
+            modProg.completedAt = new Date();
+          }
+        }
+      }
+    }
   }
   
   await progress.save();
   return progress;
 };
 
-module.exports = mongoose.model('Progress', progressSchema);
+module.exports = mongoose.model("Progress", progressSchema);

@@ -68,8 +68,39 @@ exports.createLiveSession = async (req, res) => {
       createdBy: req.user.id,
     };
 
+    if (req.body.moduleId) {
+      const Module = require("../models/Module");
+      const module = await Module.findOne({
+        _id: req.body.moduleId,
+        batch: batchId,
+      });
+
+      if (!module) {
+        return res.status(404).json({
+          success: false,
+          message: "Module not found in this batch",
+        });
+      }
+
+      sessionData.module = req.body.moduleId;
+    }
+
     const liveSession = await LiveSession.create(sessionData);
 
+    // NEW: Automatically add to module if specified
+    if (sessionData.module) {
+      const Module = require("../models/Module");
+      const module = await Module.findById(sessionData.module);
+
+      await module.addItem({
+        itemType: "live_session",
+        itemId: liveSession._id,
+        itemModel: "LiveSession",
+        title: liveSession.title,
+        isRequired: true,
+        estimatedDuration: liveSession.duration,
+      });
+    }
     // Send notifications
     await sendSessionNotifications(liveSession, "created");
 
@@ -229,9 +260,7 @@ exports.updateLiveSession = async (req, res) => {
       const newStartTime = req.body.startTime
         ? new Date(req.body.startTime)
         : session.startTime;
-      const newEndTime = req.body.endTime 
-        ? new Date(req.body.endTime) 
-        : session.endTime;
+      const newEndTime = req.body.endTime ? new Date(req.body.endTime) : session.endTime;
 
       const timingValidation = await validateSessionTiming(
         session.batch,
@@ -252,12 +281,13 @@ exports.updateLiveSession = async (req, res) => {
     // Update session fields manually
     if (req.body.title !== undefined) session.title = req.body.title;
     if (req.body.description !== undefined) session.description = req.body.description;
-    if (req.body.startTime !== undefined) session.startTime = new Date(req.body.startTime);
+    if (req.body.startTime !== undefined)
+      session.startTime = new Date(req.body.startTime);
     if (req.body.endTime !== undefined) session.endTime = new Date(req.body.endTime);
     if (req.body.duration !== undefined) session.duration = req.body.duration;
     if (req.body.sessionType !== undefined) session.sessionType = req.body.sessionType;
     if (req.body.status !== undefined) session.status = req.body.status;
-    
+
     // Save the session (validators will run correctly now)
     const updatedSession = await session.save();
 
