@@ -22,6 +22,12 @@ const liveSessionSchema = new mongoose.Schema(
       ref: "Course",
       required: true,
     },
+    // Module organization - Required to schedule live lectures
+    module: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Module",
+      required: [true, "Please assign session to a module"],
+    },
     instructor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

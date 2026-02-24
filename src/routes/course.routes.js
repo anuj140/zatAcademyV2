@@ -8,6 +8,9 @@ const {
   deleteCourse,
   togglePublish,
   getCourseStats,
+  getCourseLearningPath,
+  getCourseModuleStatus,
+  publishCourseWithModules,
 } = require("../controllers/course.controller");
 const { protect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
@@ -34,6 +37,15 @@ router.put(
 router.delete("/:id", authorize("admin", "superAdmin"), deleteCourse);
 router.put("/:id/publish", authorize("admin", "superAdmin"), togglePublish);
 router.get("/stats", authorize("admin", "superAdmin"), getCourseStats);
+
+// Module-related routes
+router.get("/:id/learning-path", getCourseLearningPath);
+router.get("/:id/module-status", authorize("admin", "superAdmin"), getCourseModuleStatus);
+router.put(
+  "/:id/publish-with-modules",
+  authorize("admin", "superAdmin"),
+  publishCourseWithModules,
+);
 
 // Public routes (with authentication)
 router.get("/", getCourses);

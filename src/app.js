@@ -11,6 +11,7 @@ const cron = require("node-cron");
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
 const courseRoutes = require("./routes/course.routes");
+const moduleRoutes = require("./routes/module.routes");
 const batchRoutes = require("./routes/batch.routes");
 const enrollmentRoutes = require("./routes/enrollment.routes");
 const liveSessionRoutes = require("./routes/liveSession.routes");
@@ -55,6 +56,7 @@ app.use(cors());
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/courses", courseRoutes);
+app.use("/api/v1/modules", moduleRoutes);
 app.use("/api/v1/batches", batchRoutes);
 app.use("/api/v1/enrollments", enrollmentRoutes);
 app.use("/api/v1/live-sessions", liveSessionRoutes);
@@ -66,6 +68,8 @@ app.use("/api/v1/grades", gradeRoutes);
 app.use("/api/v1/doubts", doubtRoutes); // NEW
 app.use("/api/v1/progress", progressRoutes); // NEW
 app.use("/api/v1/analytics", analyticsRoutes); // NEW
+
+
 
 // Health check route
 app.get("/health", (req, res) => {

@@ -34,7 +34,7 @@ router.get(
 
 // Material CRUD
 router.post(
-  "/batches/:batchId/learning-materials",
+  "/",
   authorize("instructor", "admin", "superAdmin"),
   canManageBatchContent,
   uploadSessionMaterial,

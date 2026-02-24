@@ -9,12 +9,8 @@ const mongoose = require("mongoose");
 // @access  Private/Instructor
 exports.createLearningMaterial = async (req, res) => {
   try {
-    const { batchId } = req.params;
-
-    let jsonPayload = JSON.parse(req.body.jsonData);
-
     // Check batch exists and user is instructor
-    const batch = await Batch.findById(batchId);
+    const batch = await Batch.findById(req.body.batchId);
     if (!batch) {
       return res.status(404).json({
         success: false,
@@ -34,8 +30,8 @@ exports.createLearningMaterial = async (req, res) => {
     }
 
     let materialData = {
-      ...jsonPayload,
-      batch: batchId,
+      ...req.body,
+      batch,
       course: batch.course,
       createdBy: req.user.id,
     };

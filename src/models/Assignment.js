@@ -32,7 +32,11 @@ const assignmentSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    module: String,
+    module: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Module",
+      required: [true, "Please assign assignment to a module"],
+    },
 
     // Grading
     maxMarks: {

@@ -53,6 +53,23 @@ const courseSchema = new mongoose.Schema(
     tags: [String],
     prerequisites: [String],
     learningOutcomes: [String],
+    // Module Organization - Required for course content
+    modules: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Module",
+      },
+    ],
+    // Module metadata
+    totalModules: {
+      type: Number,
+      default: 0,
+    },
+    moduleStructureComplete: {
+      type: Boolean,
+      default: false,
+      description: "Indicates if all required modules are created",
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
