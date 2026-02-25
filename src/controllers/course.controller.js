@@ -343,7 +343,8 @@ exports.getCourseLearningPath = async (req, res) => {
     if (
       !course.isPublished &&
       req.user?.role !== "admin" &&
-      req.user?.role !== "superAdmin"
+      req.user?.role !== "superAdmin" &&
+      req.user?.role !== "student"
     ) {
       return res.status(403).json({
         success: false,

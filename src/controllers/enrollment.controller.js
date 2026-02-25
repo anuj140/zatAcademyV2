@@ -116,7 +116,7 @@ exports.enrollInBatch = async (req, res) => {
       dueDate: new Date(),
     });
 
-    // Send enrollment confirmation email
+    // // Send enrollment confirmation email
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4F46E5;">Enrollment Confirmation</h2>
@@ -134,11 +134,15 @@ exports.enrollInBatch = async (req, res) => {
       </div>
     `;
 
-    await sendEmail({
-      email: req.user.email,
-      subject: "Enrollment Confirmation - AlmaBetter Clone",
-      html: emailHtml,
-    });
+    try {
+      await sendEmail({
+        email: req.user.email,
+        subject: "Enrollment Confirmation - ZatAcademy",
+        html: emailHtml,
+      });
+    } catch (error) {
+      console.log(error);
+    }
 
     res.status(201).json({
       success: true,
