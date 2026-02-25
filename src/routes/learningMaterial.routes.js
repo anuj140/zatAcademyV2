@@ -8,6 +8,9 @@ const {
   deleteLearningMaterial,
   togglePublish,
   getMaterialStats,
+  downloadMaterial,
+  previewMaterial,
+  getMaterialStatistics,
 } = require("../controllers/learningMaterial.controller");
 const { protect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
@@ -56,5 +59,10 @@ router.delete(
   deleteLearningMaterial,
 );
 router.put("/:id/publish", authorize("instructor", "admin", "superAdmin"), togglePublish);
+
+// Download and Preview routes
+router.get("/:id/download", downloadMaterial);
+router.get("/:id/preview", previewMaterial);
+router.get("/:id/statistics", getMaterialStatistics);
 
 module.exports = router;

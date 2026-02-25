@@ -121,6 +121,20 @@ const learningMaterialSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    downloadCount: {
+      type: Number,
+      default: 0,
+    },
+    previewCount: {
+      type: Number,
+      default: 0,
+    },
+    lastDownloadedAt: {
+      type: Date,
+    },
+    lastPreviewedAt: {
+      type: Date,
+    },
     completionCount: {
       type: Number,
       default: 0,

@@ -445,3 +445,635 @@ function getProviderFromUrl(url) {
   if (url.includes("github.com")) return "github";
   return "external";
 }
+
+// @desc    Download learning material
+// @route   GET /api/v1/learning-materials/:id/download
+// @access  Private (students/instructor/admin/superAdmin)
+exports.downloadMaterial = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate material ID
+    const validation = validateMaterialId(id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    // Validate user context
+    if (!req.user || !req.user.id || !req.user.role) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    // Fetch material
+    const material = await LearningMaterial.findById(id).populate("batch");
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message: "Learning material not found",
+      });
+    }
+
+    // Validate material has downloadable file
+    if (!material.file) {
+      return res.status(400).json({
+        success: false,
+        message: "This material does not have a file attached for download",
+      });
+    }
+
+    if (!material.file.url) {
+      return res.status(400).json({
+        success: false,
+        message: "Material file URL is missing or invalid",
+      });
+    }
+
+    // Check authorization
+    const userRole = req.user.role;
+    let canAccess = false;
+
+    try {
+      canAccess = await checkMaterialAccess(req.user.id, material, userRole);
+    } catch (accessError) {
+      console.error("Error checking material access:", accessError);
+      return res.status(500).json({
+        success: false,
+        message: "Error verifying access permissions",
+      });
+    }
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to download this material",
+      });
+    }
+
+    // Check availability for students
+    if (userRole === "student") {
+      if (!material.isPublished) {
+        return res.status(403).json({
+          success: false,
+          message: "This material has not been published yet",
+        });
+      }
+
+      if (!material.isAvailable) {
+        const now = new Date();
+        let reason = "This material is not available";
+
+        if (material.availableFrom && now < material.availableFrom) {
+          reason = `This material will be available from ${material.availableFrom.toLocaleDateString()}`;
+        } else if (material.availableUntil && now > material.availableUntil) {
+          reason = `This material is no longer available (expired on ${material.availableUntil.toLocaleDateString()})`;
+        }
+
+        return res.status(403).json({
+          success: false,
+          message: reason,
+        });
+      }
+    }
+
+    // Update download count and track last download
+    try {
+      material.downloadCount = (material.downloadCount || 0) + 1;
+      material.lastDownloadedAt = new Date();
+      await material.save();
+    } catch (saveError) {
+      console.error("Error updating download count:", saveError);
+      // Continue anyway - don't fail the request just for tracking
+    }
+
+    // Return the file URL and tracking data
+    res.status(200).json({
+      success: true,
+      message: "Material download initiated",
+      data: {
+        fileName: material.file.originalName || `material-${material._id}`,
+        fileUrl: material.file.url,
+        fileSize: material.file.size || 0,
+        mimeType: material.file.mimeType || "application/octet-stream",
+        materialTitle: material.title,
+        downloadCount: material.downloadCount,
+        downloadedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error("Download material error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to process download request",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+// @desc    Preview learning material
+// @route   GET /api/v1/learning-materials/:id/preview
+// @access  Private (students/instructor/admin/superAdmin)
+exports.previewMaterial = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate material ID
+    const validation = validateMaterialId(id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    // Validate user context
+    if (!req.user || !req.user.id || !req.user.role) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    // Fetch material
+    const material = await LearningMaterial.findById(id)
+      .populate("batch")
+      .populate("createdBy", "name email");
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message: "Learning material not found",
+      });
+    }
+
+    // Check authorization
+    const userRole = req.user.role;
+    let canAccess = false;
+
+    try {
+      canAccess = await checkMaterialAccess(req.user.id, material, userRole);
+    } catch (accessError) {
+      console.error("Error checking material access:", accessError);
+      return res.status(500).json({
+        success: false,
+        message: "Error verifying access permissions",
+      });
+    }
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to preview this material",
+      });
+    }
+
+    // Check availability for students
+    if (userRole === "student") {
+      if (!material.isPublished) {
+        return res.status(403).json({
+          success: false,
+          message: "This material has not been published yet",
+        });
+      }
+
+      if (!material.isAvailable) {
+        const now = new Date();
+        let reason = "This material is not available";
+
+        if (material.availableFrom && now < material.availableFrom) {
+          reason = `This material will be available from ${material.availableFrom.toLocaleDateString()}`;
+        } else if (material.availableUntil && now > material.availableUntil) {
+          reason = `This material is no longer available (expired on ${material.availableUntil.toLocaleDateString()})`;
+        }
+
+        return res.status(403).json({
+          success: false,
+          message: reason,
+        });
+      }
+    }
+
+    // Update preview count and track last preview
+    try {
+      material.previewCount = (material.previewCount || 0) + 1;
+      material.lastPreviewedAt = new Date();
+      await material.save();
+    } catch (saveError) {
+      console.error("Error updating preview count:", saveError);
+      // Continue anyway - don't fail the request just for tracking
+    }
+
+    // Build preview data based on material type
+    let previewData = {
+      id: material._id,
+      title: material.title,
+      description: material.description || "",
+      materialType: material.materialType,
+      contentType: material.contentType,
+      createdBy: material.createdBy || {},
+      createdAt: material.createdAt,
+      previewCount: material.previewCount,
+      isPublished: material.isPublished,
+    };
+
+    // Handle file-based materials
+    if (material.file && material.file.url) {
+      const previewUrl = getPreviewUrl(material.file.url, material.materialType);
+
+      previewData.file = {
+        url: previewUrl || material.file.url,
+        originalName: material.file.originalName || `material-${material._id}`,
+        size: material.file.size || 0,
+        mimeType: material.file.mimeType || "application/octet-stream",
+        public_id: material.file.public_id,
+      };
+
+      // Add optimized preview URL for specific types
+      if (
+        material.materialType === "pdf" ||
+        material.materialType === "image" ||
+        material.materialType === "presentation" ||
+        material.materialType === "video"
+      ) {
+        const cloudinaryPreviewUrl = getCloudinaryPreviewUrl(
+          material.file.public_id,
+          material.materialType,
+        );
+
+        if (cloudinaryPreviewUrl) {
+          previewData.file.previewUrl = cloudinaryPreviewUrl;
+          previewData.file.canPreviewInline = true;
+        } else {
+          previewData.file.canPreviewInline = false;
+        }
+      }
+
+      // Add video-specific metadata
+      if (material.materialType === "video" && material.file.duration) {
+        previewData.file.duration = material.file.duration;
+        previewData.file.formattedDuration = formatDuration(material.file.duration);
+      }
+    }
+
+    // Handle external URLs
+    if (material.externalUrl) {
+      if (!previewData.file) {
+        previewData.file = {};
+      }
+      previewData.file.externalUrl = material.externalUrl;
+      previewData.file.externalProvider = material.externalProvider || "unknown";
+      previewData.file.canPreviewInline =
+        material.externalProvider === "youtube" || material.externalProvider === "vimeo";
+    }
+
+    // Handle quiz materials
+    if (material.materialType === "quiz") {
+      if (!material.quizQuestions || material.quizQuestions.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Quiz material has no questions defined",
+        });
+      }
+
+      previewData.quizInfo = {
+        totalQuestions: material.quizQuestions.length,
+        totalPoints: material.totalPoints || 0,
+        estimatedTime: material.estimatedTime || 0,
+        difficulty: material.difficulty || "beginner",
+      };
+    }
+
+    // Add estimated time if available
+    if (material.estimatedTime) {
+      previewData.estimatedTime = material.estimatedTime;
+      previewData.formattedEstimatedTime = `${material.estimatedTime} minutes`;
+    }
+
+    // Add difficulty level
+    if (material.difficulty) {
+      previewData.difficulty = material.difficulty;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Material preview retrieved successfully",
+      data: previewData,
+    });
+  } catch (error) {
+    console.error("Preview material error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve material preview",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+// @desc    Get material download/preview statistics
+// @route   GET /api/v1/learning-materials/:id/statistics
+// @access  Private (students/instructor/admin/superAdmin)
+exports.getMaterialStatistics = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate material ID
+    const validation = validateMaterialId(id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    // Validate user context
+    if (!req.user || !req.user.id || !req.user.role) {
+      return res.status(401).json({
+        success: false,
+        message: "User authentication required",
+      });
+    }
+
+    // Fetch material
+    const material = await LearningMaterial.findById(id).populate("batch");
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message: "Learning material not found",
+      });
+    }
+
+    // Check authorization
+    const userRole = req.user.role;
+    let canAccess = false;
+
+    try {
+      canAccess = await checkMaterialAccess(req.user.id, material, userRole);
+    } catch (accessError) {
+      console.error("Error checking material access:", accessError);
+      return res.status(500).json({
+        success: false,
+        message: "Error verifying access permissions",
+      });
+    }
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to view statistics for this material",
+      });
+    }
+
+    // Build statistics object
+    const statistics = {
+      materialId: material._id,
+      title: material.title,
+      materialType: material.materialType,
+      isPublished: material.isPublished,
+      viewCount: material.viewCount || 0,
+      downloadCount: material.downloadCount || 0,
+      previewCount: material.previewCount || 0,
+      completionCount: material.completionCount || 0,
+      lastDownloadedAt: material.lastDownloadedAt || null,
+      lastPreviewedAt: material.lastPreviewedAt || null,
+      engagementScore: calculateEngagementScore(material),
+      engagementLevel: getEngagementLevel(material),
+    };
+
+    res.status(200).json({
+      success: true,
+      message: "Material statistics retrieved successfully",
+      data: statistics,
+    });
+  } catch (error) {
+    console.error("Get material statistics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve material statistics",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Check if user has access to material
+ */
+async function checkMaterialAccess(userId, material, userRole) {
+  try {
+    const Enrollment = require("../models/Enrollment");
+
+    // Validate inputs
+    if (!userId || !material || !userRole) {
+      throw new Error("Missing required parameters for access check");
+    }
+
+    // Admin and superAdmin can always access
+    if (userRole === "admin" || userRole === "superAdmin") {
+      return true;
+    }
+
+    // Instructor can access if they created it or are assigned to batch
+    if (userRole === "instructor") {
+      if (!material.batch) {
+        console.warn("Material has no batch assigned");
+        return false;
+      }
+
+      const Batch = require("../models/Batch");
+      const batch = await Batch.findById(material.batch);
+
+      if (!batch) {
+        console.warn("Batch not found for material");
+        return false;
+      }
+
+      // Check if instructor created the material or is assigned to batch
+      const isCreator = material.createdBy && material.createdBy.toString() === userId;
+      const isBatchInstructor =
+        batch.instructor && batch.instructor.toString() === userId;
+
+      return isCreator || isBatchInstructor;
+    }
+
+    // Students can access if enrolled in the batch
+    if (userRole === "student") {
+      if (!material.batch) {
+        console.warn("Material has no batch assigned");
+        return false;
+      }
+
+      const enrollment = await Enrollment.findOne({
+        student: userId,
+        batch: material.batch,
+        enrollmentStatus: "active",
+        accessRevoked: false,
+      });
+
+      return !!enrollment;
+    }
+
+    // Unknown role
+    return false;
+  } catch (error) {
+    console.error("Error in checkMaterialAccess:", error);
+    throw error;
+  }
+}
+
+/**
+ * Validate material ID format
+ */
+function validateMaterialId(materialId) {
+  if (!materialId) {
+    return { valid: false, error: "Material ID is required" };
+  }
+  if (!mongoose.Types.ObjectId.isValid(materialId)) {
+    return { valid: false, error: "Invalid material ID format" };
+  }
+  return { valid: true };
+}
+
+/**
+ * Generate preview URL based on material type
+ * Returns the appropriate preview URL based on file type and storage location
+ */
+function getPreviewUrl(fileUrl, materialType) {
+  // Validate inputs
+  if (!fileUrl) {
+    return null;
+  }
+
+  if (!materialType) {
+    // If no material type provided, return URL as-is
+    return fileUrl;
+  }
+
+  // For Cloudinary URLs, return as-is (they can be previewed directly)
+  if (fileUrl.includes("cloudinary")) {
+    return fileUrl;
+  }
+
+  // For external URLs, return as-is
+  return fileUrl;
+}
+
+/**
+ * Generate Cloudinary preview URL with transformations
+ * Applies specific transformations based on material type
+ */
+function getCloudinaryPreviewUrl(publicId, materialType) {
+  // Validate inputs
+  if (!publicId) {
+    return null;
+  }
+
+  if (!materialType) {
+    return null;
+  }
+
+  const baseUrl = "https://res.cloudinary.com";
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+
+  // Validate Cloudinary config
+  if (!cloudName) {
+    console.warn("CLOUDINARY_CLOUD_NAME not configured");
+    return null;
+  }
+
+  try {
+    // Apply transformations based on material type
+    switch (materialType) {
+      case "pdf":
+        // PDF preview - return URL with preset transformation
+        // Note: PDF rendering requires Cloudinary premium or custom integration
+        return `${baseUrl}/${cloudName}/image/upload/w_800,h_1000,c_limit/${publicId}`;
+
+      case "image":
+        // Image preview with optimization
+        return `${baseUrl}/${cloudName}/image/upload/w_800,h_600,c_limit,q_auto/${publicId}`;
+
+      case "presentation":
+        // Presentation preview with aspect ratio preservation
+        return `${baseUrl}/${cloudName}/image/upload/w_800,c_limit,q_auto/${publicId}`;
+
+      case "video":
+        // Video thumbnail/poster frame
+        return `${baseUrl}/${cloudName}/video/upload/w_800,h_600,c_limit,so_0/${publicId}`;
+
+      default:
+        // Generic preview for other types
+        return `${baseUrl}/${cloudName}/image/upload/w_800/${publicId}`;
+    }
+  } catch (error) {
+    console.error("Error generating preview URL:", error);
+    return null;
+  }
+}
+
+/**
+ * Calculate engagement score based on views, downloads, and previews
+ */
+function calculateEngagementScore(material) {
+  try {
+    const views = material.viewCount || 0;
+    const downloads = material.downloadCount || 0;
+    const previews = material.previewCount || 0;
+    const completions = material.completionCount || 0;
+
+    // Weight: views (1x), previews (2x), downloads (3x), completions (5x)
+    const score = views * 1 + previews * 2 + downloads * 3 + completions * 5;
+
+    return Math.max(0, score); // Ensure non-negative
+  } catch (error) {
+    console.error("Error calculating engagement score:", error);
+    return 0;
+  }
+}
+
+/**
+ * Determine engagement level based on engagement score
+ */
+function getEngagementLevel(material) {
+  try {
+    const score = calculateEngagementScore(material);
+
+    if (score === 0) return "none";
+    if (score < 10) return "low";
+    if (score < 50) return "moderate";
+    if (score < 100) return "high";
+    return "very-high";
+  } catch (error) {
+    console.error("Error determining engagement level:", error);
+    return "unknown";
+  }
+}
+
+/**
+ * Format duration in seconds to readable format (HH:MM:SS)
+ */
+function formatDuration(seconds) {
+  try {
+    if (!seconds || typeof seconds !== "number") {
+      return "0:00";
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+
+    return `${minutes}:${String(secs).padStart(2, "0")}`;
+  } catch (error) {
+    console.error("Error formatting duration:", error);
+    return "0:00";
+  }
+}
