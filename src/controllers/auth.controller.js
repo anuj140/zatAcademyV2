@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const User = require("../models/User");
+const Course = require("../models/Course");
 const { generateToken } = require("../utils/tokenService");
 const { sendPasswordResetEmail, sendWelcomeEmail } = require("../utils/emailService");
 
@@ -8,7 +9,24 @@ const { sendPasswordResetEmail, sendWelcomeEmail } = require("../utils/emailServ
 // @access  Public
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const {
+      name,
+      email,
+      password,
+      confirmPassword,
+      phone,
+      interestedCourse,
+      yearOfPassout,
+      highestQualification,
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide name, email, password, and confirm password",
+      });
+    }
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -19,16 +37,89 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Only allow student registration from public route
+    // Validate password match
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Passwords do not match",
+      });
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters long",
+      });
+    }
+
+    // Validate phone number (10 digits, Indian format)
+    if (!phone || !/^[6-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please provide a valid 10-digit Indian phone number (starting with 6-9)",
+      });
+    }
+
+    // Validate year of passout
+    if (!yearOfPassout || yearOfPassout < 2012 || yearOfPassout > 2029) {
+      return res.status(400).json({
+        success: false,
+        message: "Year of passout must be between 2012 and 2029",
+      });
+    }
+
+    // Validate highest qualification
+    const validQualifications = [
+      "12th",
+      "diploma",
+      "bachelor's degree",
+      "master's degree",
+      "phd",
+    ];
+    if (!highestQualification || !validQualifications.includes(highestQualification)) {
+      return res.status(400).json({
+        success: false,
+        message: `Highest qualification must be one of: ${validQualifications.join(", ")}`,
+      });
+    }
+
+    // Handle interested course
+    let courseToEnroll = interestedCourse;
+    if (!courseToEnroll) {
+      // Auto-populate from available courses (optional logic)
+      // You can add specific logic here if needed
+      courseToEnroll = null;
+    } else {
+      // Validate that the course exists
+      const course = await Course.findById(interestedCourse);
+      if (!course) {
+        return res.status(404).json({
+          success: false,
+          message: "Interested course not found",
+        });
+      }
+    }
+
+    // Create user
     const user = await User.create({
       name,
       email,
       password,
+      phone,
+      interestedCourse: courseToEnroll,
+      yearOfPassout,
+      highestQualification,
       role: "student", // Force student role for public registration
     });
 
     // Send welcome email
-    await sendWelcomeEmail(user);
+    try {
+      await sendWelcomeEmail(user);
+    } catch (error) {
+      console.log(error);
+    }
 
     // Generate token
     const token = generateToken(user._id, user.role);
@@ -40,7 +131,10 @@ exports.register = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
+        yearOfPassout: user.yearOfPassout,
+        highestQualification: user.highestQualification,
       },
     });
   } catch (error) {

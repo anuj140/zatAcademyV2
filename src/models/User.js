@@ -32,6 +32,45 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  // Student-specific fields
+  phone: {
+    type: String,
+    validate: {
+      validator: function (v) {
+        // Only validate phone if user is a student
+        if (this.role === "student" && v) {
+          return /^[6-9]\d{9}$/.test(v); // Indian phone number validation
+        }
+        return true;
+      },
+      message: "Please provide a valid 10-digit Indian phone number (starting with 6-9)",
+    },
+  },
+  interestedCourse: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Course",
+  },
+  yearOfPassout: {
+    type: Number,
+    validate: {
+      validator: function (v) {
+        // Only validate if provided
+        if (v) {
+          return v >= 2012 && v <= 2029;
+        }
+        return true;
+      },
+      message: "Year of passout must be between 2012 and 2029",
+    },
+  },
+  highestQualification: {
+    type: String,
+    enum: {
+      values: ["12th", "diploma", "bachelor's degree", "master's degree", "phd"],
+      message:
+        "Highest qualification must be one of: 12th, diploma, bachelor's degree, master's degree, phd",
+    },
+  },
   passwordResetToken: String,
   passwordResetExpires: Date,
   emailVerified: {
