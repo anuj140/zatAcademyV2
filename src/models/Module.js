@@ -345,13 +345,20 @@ moduleSchema.statics.getCourseCurriculum = async function (
     // Attach progress data to each module
     for (const module of modules) {
       // Calculate module completion for this student
-      const moduleItemIds = module.items.map((item) => {
-        // Handle both populated objects and plain ObjectIds
-        if (typeof item.itemId === "object" && item.itemId._id) {
-          return item.itemId._id;
-        }
-        return item.itemId;
-      });
+      const moduleItemIds = module.items
+        .map((item) => {
+          console.log("item: ", item);
+          // Handle both populated objects and plain ObjectIds
+          if (
+            typeof item.itemId === "object" &&
+            item.itemId !== null &&
+            item.itemId._id
+          ) {
+            return item.itemId._id;
+          }
+          return item.itemId;
+        })
+        .filter((id) => id !== null);
 
       // Check material progress
       const completedMaterials =

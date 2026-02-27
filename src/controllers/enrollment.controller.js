@@ -134,11 +134,15 @@ exports.enrollInBatch = async (req, res) => {
       </div>
     `;
 
-    await sendEmail({
-      email: req.user.email,
-      subject: "Enrollment Confirmation - AlmaBetter Clone",
-      html: emailHtml,
-    });
+    try {
+      await sendEmail({
+        email: req.user.email,
+        subject: "Enrollment Confirmation - AlmaBetter Clone",
+        html: emailHtml,
+      });
+    } catch (error) {
+      console.log(error);
+    }
 
     res.status(201).json({
       success: true,
