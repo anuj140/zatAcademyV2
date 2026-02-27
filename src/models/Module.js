@@ -345,7 +345,13 @@ moduleSchema.statics.getCourseCurriculum = async function (
     // Attach progress data to each module
     for (const module of modules) {
       // Calculate module completion for this student
-      const moduleItemIds = module.items.map((item) => item.itemId.toString());
+      const moduleItemIds = module.items.map((item) => {
+        // Handle both populated objects and plain ObjectIds
+        if (typeof item.itemId === "object" && item.itemId._id) {
+          return item.itemId._id;
+        }
+        return item.itemId;
+      });
 
       // Check material progress
       const completedMaterials =
@@ -455,8 +461,12 @@ moduleSchema.statics.getModuleCurriculum = async function (moduleId, options = {
       };
 
       if (item.itemModel === "LearningMaterial") {
+        const itemIdStr =
+          typeof item.itemId === "object" && item.itemId._id
+            ? item.itemId._id.toString()
+            : item.itemId.toString();
         const materialProgress = progress?.materialProgress?.find(
-          (mp) => mp.material.toString() === item.itemId.toString(),
+          (mp) => mp.material.toString() === itemIdStr,
         );
 
         if (materialProgress) {
@@ -466,9 +476,13 @@ moduleSchema.statics.getModuleCurriculum = async function (moduleId, options = {
           itemProgress.timeSpent = materialProgress.timeSpent;
         }
       } else if (item.itemModel === "Assignment") {
+        const assignmentId =
+          typeof item.itemId === "object" && item.itemId._id
+            ? item.itemId._id
+            : item.itemId;
         const submission = await Submission.findOne({
           student: studentId,
-          assignment: item.itemId,
+          assignment: assignmentId,
         });
 
         if (submission) {
@@ -478,8 +492,12 @@ moduleSchema.statics.getModuleCurriculum = async function (moduleId, options = {
           itemProgress.submissionId = submission._id;
         }
       } else if (item.itemModel === "LiveSession") {
+        const itemIdStr =
+          typeof item.itemId === "object" && item.itemId._id
+            ? item.itemId._id.toString()
+            : item.itemId.toString();
         const sessionAttendance = progress?.sessionAttendance?.find(
-          (sa) => sa.session.toString() === item.itemId.toString(),
+          (sa) => sa.session.toString() === itemIdStr,
         );
 
         if (sessionAttendance) {
