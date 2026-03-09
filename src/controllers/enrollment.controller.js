@@ -2,14 +2,92 @@ const Enrollment = require("../models/Enrollment");
 const Batch = require("../models/Batch");
 const Course = require("../models/Course");
 const Payment = require("../models/Payment");
+const StudentProfile = require("../models/StudentProfile");
 const paymentService = require("../utils/paymentService");
 const { sendEmail } = require("../utils/emailService");
+
+// @desc    Get available batches for a course (for enrollment form)
+// @route   GET /api/v1/enrollments/batches/course/:courseId
+// @access  Private/Student
+exports.getAvailableBatchesForEnrollment = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    // Verify course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    // Get all active batches for this course that haven't started yet
+    const batches = await Batch.find({
+      course: courseId,
+      isActive: true,
+      isFull: false,
+      startDate: { $gt: new Date() },
+    })
+      .populate("instructor", "name email")
+      .select(
+        "name startDate endDate schedule maxStudents currentStudents isActive isFull instructor"
+      )
+      .sort("startDate");
+
+    // Check which batches the student is already enrolled in
+    const studentEnrollments = await Enrollment.find({
+      student: req.user.id,
+      course: courseId,
+    }).select("batch");
+
+    const enrolledBatchIds = studentEnrollments.map((e) =>
+      e.batch.toString()
+    );
+
+    // Format response
+    const formattedBatches = batches.map((batch) => ({
+      id: batch._id,
+      name: batch.name,
+      startDate: batch.startDate,
+      endDate: batch.endDate,
+      schedule: batch.schedule,
+      instructor: batch.instructor,
+      maxStudents: batch.maxStudents,
+      currentStudents: batch.currentStudents,
+      availableSeats: batch.maxStudents - batch.currentStudents,
+      isEnrolled: enrolledBatchIds.includes(batch._id.toString()),
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: formattedBatches.length,
+      data: {
+        course: {
+          id: course._id,
+          title: course.title,
+          description: course.description,
+          fee: course.fee,
+          emiAmount: course.emiAmount,
+          thumbnail: course.thumbnail,
+        },
+        batches: formattedBatches,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 
 // @desc    Enroll in a batch
 // @route   POST /api/v1/enrollments
 // @access  Private/Student
 exports.enrollInBatch = async (req, res) => {
   try {
+    //1. Get the batchId and paymentMethod from request body
     const { batchId, paymentMethod } = req.body;
 
     // Check if user is a student
@@ -17,6 +95,17 @@ exports.enrollInBatch = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: "Only students can enroll in batches",
+      });
+    }
+
+    // Check if student profile exists - KYC requirement
+    const studentProfile = await StudentProfile.findOne({ student: req.user.id });
+    if (!studentProfile) {
+      return res.status(400).json({
+        success: false,
+        message: "Please complete your profile before enrolling in a batch",
+        requiresProfileCompletion: true,
+        redirectTo: "/profiles/create",
       });
     }
 
@@ -130,14 +219,14 @@ exports.enrollInBatch = async (req, res) => {
         </ul>
         <p>Please complete your payment to activate your enrollment.</p>
         <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
-        <p style="color: #666; font-size: 12px;">AlmaBetter Clone Team</p>
+        <p style="color: #666; font-size: 12px;">ZatAcademy Team</p>
       </div>
     `;
 
     try {
       await sendEmail({
         email: req.user.email,
-        subject: "Enrollment Confirmation - AlmaBetter Clone",
+        subject: "Enrollment Confirmation - ZatAcademy ",
         html: emailHtml,
       });
     } catch (error) {

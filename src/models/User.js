@@ -55,6 +55,8 @@ const userSchema = new mongoose.Schema({
     validate: {
       validator: function (v) {
         // Only validate if provided
+        console.log("v in yearOfPassout: ", v);
+        console.log("this: ", this);
         if (v) {
           return v >= 2012 && v <= 2029;
         }
