@@ -6,8 +6,8 @@ const studentProfileSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Student reference is required"],
-      unique: true,
-      sparse: true, // Remove spare index in production
+      // unique: true,
+      // sparse: true, // Remove spare index in production
     },
     // Basic Information (pre-filled from User)
     name: {
