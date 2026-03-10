@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+  getAvailableBatchesForEnrollment,
   enrollInBatch,
   paymentCallback,
   getMyEnrollments,
@@ -18,6 +19,7 @@ router.post('/payment-callback', paymentCallback);
 router.use(protect);
 
 // Student enrollment
+router.get('/batches/course/:courseId', authorize('student'), getAvailableBatchesForEnrollment);
 router.post('/', authorize('student'), enrollInBatch);
 router.get('/my-enrollments', authorize('student'), getMyEnrollments);
 router.get('/:id', getEnrollment); // Student can see own, admin/instructor can see all

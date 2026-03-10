@@ -265,6 +265,9 @@ exports.toggleActive = async (req, res) => {
 // @desc    Get batches by course
 // @route   GET /api/v1/courses/:courseId/batches
 // @access  Public (for students to see available batches)
+// @desc    Get all available batches for a specific course (for enrollment form)
+// @route   GET /api/v1/batches/courses/:courseId/batches
+// @access  Private
 exports.getBatchesByCourse = async (req, res) => {
   try {
     const course = await Course.findById(req.params.courseId);
@@ -276,26 +279,49 @@ exports.getBatchesByCourse = async (req, res) => {
       });
     }
 
-    // Students can only see active, non-full batches
-    const query = Batch.find({
-      course: req.params.courseId,
-      isActive: true,
-      isFull: false,
-    }).populate("instructor", "name email");
+    let filter = { course: req.params.courseId };
 
-    if (req.user?.role === "admin" || req.user?.role === "superAdmin") {
-      // Admin can see all batches
-      query.find({});
+    // Students can only see active, non-full batches that haven't started yet
+    if (req.user?.role === "student") {
+      filter = {
+        ...filter,
+        isActive: true,
+        isFull: false,
+        startDate: { $gt: new Date() }, // Future batches only
+      };
     }
+    // Admin/SuperAdmin can see all batches for this course
+    // else: admins see all batches (no additional filters)
 
-    const batches = await query;
+    const batches = await Batch.find(filter)
+      .populate("instructor", "name email")
+      .select("name startDate endDate schedule maxStudents currentStudents isActive isFull instructor createdAt")
+      .sort("startDate");
 
     res.status(200).json({
       success: true,
       count: batches.length,
       data: {
-        course,
-        batches,
+        course: {
+          id: course._id,
+          title: course.title,
+          fee: course.fee,
+          emiAmount: course.emiAmount,
+          description: course.description,
+        },
+        batches: batches.map((batch) => ({
+          id: batch._id,
+          name: batch.name,
+          startDate: batch.startDate,
+          endDate: batch.endDate,
+          schedule: batch.schedule,
+          instructor: batch.instructor,
+          maxStudents: batch.maxStudents,
+          currentStudents: batch.currentStudents,
+          availableSeats: batch.maxStudents - batch.currentStudents,
+          isActive: batch.isActive,
+          isFull: batch.isFull,
+        })),
       },
     });
   } catch (error) {
