@@ -1,79 +1,122 @@
-// Stub payment service for Phase 1
-// Will be replaced with actual Razorpay/Stripe integration in Phase 5
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 
 class PaymentService {
-  constructor() {
-    this.provider = 'razorpay'; // Default provider
+  // Lazily initialised so the module can be required without env vars set
+  // (useful during tests and code-analysis tools that run without .env)
+  get razorpay() {
+    if (!this._razorpay) {
+      this._razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET,
+      });
+    }
+    return this._razorpay;
   }
 
-  // Create order for payment
+  /**
+   * Create a Razorpay order
+   * @param {number} amount - Amount in INR (will be converted to paise)
+   * @param {string} currency - Currency code (default: INR)
+   * @param {string} receipt - Unique receipt identifier
+   * @returns {object} Razorpay order object
+   */
   async createOrder(amount, currency = 'INR', receipt = null) {
-    // Stub implementation - returns mock data
-    console.log(`[Payment Stub] Creating order for amount: ${amount} ${currency}`);
-    
-    return {
-      id: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      amount: amount * 100, // Convert to paise
-      currency: currency,
+    const options = {
+      amount: Math.round(amount * 100), // Convert to paise
+      currency,
       receipt: receipt || `receipt_${Date.now()}`,
-      status: 'created',
-      created_at: Date.now()
+      payment_capture: 1, // Auto-capture payment
     };
+
+    const order = await this.razorpay.orders.create(options);
+    return order;
   }
 
-  // Verify payment (stub)
-  async verifyPayment(orderId, paymentId, signature) {
-    console.log(`[Payment Stub] Verifying payment for order: ${orderId}`);
-    
-    // Always return success in stub mode
+  /**
+   * Verify Razorpay payment signature (used in frontend callback)
+   * @param {string} orderId - Razorpay order ID
+   * @param {string} paymentId - Razorpay payment ID
+   * @param {string} signature - Signature from Razorpay
+   * @returns {object} Verification result
+   */
+  verifyPayment(orderId, paymentId, signature) {
+    const body = `${orderId}|${paymentId}`;
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest('hex');
+
+    const isValid = expectedSignature === signature;
+
     return {
-      success: true,
+      success: isValid,
       orderId,
       paymentId,
-      amount: 0,
-      currency: 'INR',
-      method: 'card',
-      status: 'captured',
-      timestamp: new Date().toISOString()
     };
   }
 
-  // Create EMI schedule
+  /**
+   * Verify Razorpay webhook signature (used in webhook handler)
+   * @param {Buffer|string} rawBody - Raw request body
+   * @param {string} signature - X-Razorpay-Signature header
+   * @returns {boolean}
+   */
+  verifyWebhookSignature(rawBody, signature) {
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+      .update(rawBody)
+      .digest('hex');
+
+    return expectedSignature === signature;
+  }
+
+  /**
+   * Fetch order details from Razorpay
+   * @param {string} orderId
+   */
+  async fetchOrder(orderId) {
+    return await this.razorpay.orders.fetch(orderId);
+  }
+
+  /**
+   * Fetch payment details from Razorpay
+   * @param {string} paymentId
+   */
+  async fetchPayment(paymentId) {
+    return await this.razorpay.payments.fetch(paymentId);
+  }
+
+  /**
+   * Create EMI schedule
+   * @param {number} totalAmount - Total course fee in INR
+   * @param {number} emiAmount - Per-installment amount in INR
+   * @param {Date} startDate - First due date
+   * @returns {Array} Array of EMI schedule objects
+   */
   createEMISchedule(totalAmount, emiAmount, startDate) {
     const schedule = [];
     const emiCount = Math.ceil(totalAmount / emiAmount);
     const date = new Date(startDate);
-    
+
     for (let i = 1; i <= emiCount; i++) {
       const dueDate = new Date(date);
       dueDate.setMonth(dueDate.getMonth() + i);
-      
-      let amount = emiAmount;
-      if (i === emiCount) {
-        // Last EMI might be different amount
-        amount = totalAmount - (emiAmount * (emiCount - 1));
-      }
-      
+
+      // Last EMI handles any remainder
+      const amount = i === emiCount
+        ? totalAmount - emiAmount * (emiCount - 1)
+        : emiAmount;
+
       schedule.push({
         emiNumber: i,
-        amount: amount,
-        dueDate: dueDate,
-        status: 'pending'
+        amount,
+        dueDate,
+        status: 'pending',
       });
     }
-    
-    return schedule;
-  }
 
-  // Send payment reminder (stub)
-  async sendPaymentReminder(enrollment, upcomingPayment) {
-    console.log(`[Payment Stub] Sending reminder for EMI ${upcomingPayment.emiNumber} to student ${enrollment.student}`);
-    
-    // In real implementation, this would send email/SMS
-    return {
-      success: true,
-      message: 'Reminder sent successfully'
-    };
+    return schedule;
   }
 }
 

@@ -4,28 +4,63 @@ const {
   getAvailableBatchesForEnrollment,
   enrollInBatch,
   paymentCallback,
+  razorpayWebhook,
+  payEMI,
   getMyEnrollments,
   getBatchEnrollments,
   getEnrollment,
-  cancelEnrollment
+  getPaymentHistory,
+  cancelEnrollment,
 } = require('../controllers/enrollment.controller');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/role');
 
-// Payment callback (public for webhook)
-router.post('/payment-callback', paymentCallback);
+// ─── Public Routes ─────────────────────────────────────────────────────────────
 
-// All other routes protected
+// Razorpay webhook — must use raw body for HMAC verification
+// Must be before express.json() is applied to this route
+router.post(
+  '/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res, next) => {
+    // Make raw body available for signature verification
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body.toString('utf8');
+      req.body = JSON.parse(req.rawBody);
+    }
+    next();
+  },
+  razorpayWebhook
+);
+
+// ─── Protected Routes ──────────────────────────────────────────────────────────
 router.use(protect);
+
+// Frontend payment callback (student-authenticated, after Razorpay checkout)
+router.post('/payment-callback', paymentCallback);
 
 // Student enrollment
 router.get('/batches/course/:courseId', authorize('student'), getAvailableBatchesForEnrollment);
 router.post('/', authorize('student'), enrollInBatch);
 router.get('/my-enrollments', authorize('student'), getMyEnrollments);
-router.get('/:id', getEnrollment); // Student can see own, admin/instructor can see all
-router.put('/:id/cancel', cancelEnrollment); // Student can cancel own, admin can cancel any
+
+// Pay next EMI
+router.post('/:enrollmentId/pay-emi', authorize('student'), payEMI);
+
+// Payment history for an enrollment
+router.get('/:enrollmentId/payments', getPaymentHistory);
+
+// Single enrollment detail
+router.get('/:id', getEnrollment);
+
+// Cancel enrollment
+router.put('/:id/cancel', cancelEnrollment);
 
 // Admin/Instructor routes
-router.get('/batches/:batchId/enrollments', authorize('admin', 'superAdmin', 'instructor'), getBatchEnrollments);
+router.get(
+  '/batches/:batchId/enrollments',
+  authorize('admin', 'superAdmin', 'instructor'),
+  getBatchEnrollments
+);
 
 module.exports = router;
