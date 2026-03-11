@@ -130,10 +130,32 @@ exports.enrollInBatch = async (req, res) => {
       return res.status(400).json({ success: false, message: "Batch has already started" });
     }
 
-    // Prevent duplicate enrollment
+    // Prevent duplicate enrollment — but allow retry if prior enrollment never had a successful payment
     const existingEnrollment = await Enrollment.findOne({ student: req.user.id, batch: batchId });
     if (existingEnrollment) {
-      return res.status(400).json({ success: false, message: "Already enrolled in this batch" });
+      const isRecoverable =
+        existingEnrollment.enrollmentStatus === "pending" ||
+        existingEnrollment.enrollmentStatus === "failed";
+
+      if (!isRecoverable) {
+        // Already active, completed, suspended, or cancelled by admin — deny
+        return res.status(400).json({ success: false, message: "Already enrolled in this batch" });
+      }
+
+      // Check if any payment for this enrollment actually succeeded
+      const successfulPayment = await Payment.findOne({
+        enrollment: existingEnrollment._id,
+        status: "completed",
+      });
+
+      if (successfulPayment) {
+        // A payment did go through — the enrollment should have activated; deny re-enrollment
+        return res.status(400).json({ success: false, message: "Already enrolled in this batch" });
+      }
+
+      // Payment never completed — clean up the stale enrollment and its pending payments so the student can retry
+      await Payment.deleteMany({ enrollment: existingEnrollment._id });
+      await existingEnrollment.deleteOne();
     }
 
     const course = batch.course;
@@ -505,10 +527,21 @@ exports.razorpayWebhook = async (req, res) => {
       const razorpayPayment = event.payload.payment.entity;
       const { order_id, id: paymentId } = razorpayPayment;
 
-      await Payment.findOneAndUpdate(
+      const failedPayment = await Payment.findOneAndUpdate(
         { razorpayOrderId: order_id },
-        { status: "failed", razorpayPaymentId: paymentId }
+        { status: "failed", razorpayPaymentId: paymentId },
+        { new: true }
       );
+
+      // Mark the enrollment as 'failed' so the student is allowed to retry enrollment
+      if (failedPayment) {
+        const enrollmentToFail = await Enrollment.findById(failedPayment.enrollment);
+        if (enrollmentToFail && enrollmentToFail.enrollmentStatus === "pending") {
+          enrollmentToFail.enrollmentStatus = "failed";
+          await enrollmentToFail.save();
+        }
+      }
+
       console.log(`[Webhook] Payment failed for order ${order_id}`);
     }
 

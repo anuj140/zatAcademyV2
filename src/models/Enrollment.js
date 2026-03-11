@@ -41,7 +41,7 @@ const enrollmentSchema = new mongoose.Schema(
     },
     enrollmentStatus: {
       type: String,
-      enum: ["pending", "active", "completed", "cancelled", "suspended"],
+      enum: ["pending", "active", "failed", "completed", "cancelled", "suspended"],
       default: "pending",
     },
     paymentStatus: {
@@ -101,7 +101,12 @@ enrollmentSchema.pre("save", async function () {
   }
 
   // Update enrollment status based on payment
-  if (this.paymentStatus === "paid" || this.paymentStatus === "partially_paid") {
+  // Only activate if not already in a terminal/admin-managed state
+  const activatableStatuses = ["pending", "failed"];
+  if (
+    (this.paymentStatus === "paid" || this.paymentStatus === "partially_paid") &&
+    activatableStatuses.includes(this.enrollmentStatus)
+  ) {
     this.enrollmentStatus = "active";
   }
 });
