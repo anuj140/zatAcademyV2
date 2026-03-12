@@ -11,6 +11,7 @@ const {
   getEnrollment,
   getPaymentHistory,
   cancelEnrollment,
+  getRevenueStats,
 } = require('../controllers/enrollment.controller');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/role');
@@ -55,6 +56,13 @@ router.get('/:id', getEnrollment);
 
 // Cancel enrollment
 router.put('/:id/cancel', cancelEnrollment);
+
+// Admin / SuperAdmin revenue stats (must be placed before /:id to avoid matching :id)
+router.get(
+  '/stats/revenue',
+  authorize('admin', 'superAdmin'),
+  getRevenueStats
+);
 
 // Admin/Instructor routes
 router.get(

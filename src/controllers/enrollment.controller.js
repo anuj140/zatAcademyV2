@@ -731,3 +731,74 @@ exports.cancelEnrollment = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// @desc    Get revenue stats (total, collected, outstanding, efficiency, and batch-wise)
+// @route   GET /api/v1/enrollments/stats/revenue
+// @access  Private/Admin/SuperAdmin
+exports.getRevenueStats = async (req, res) => {
+  try {
+    // Only include non-cancelled/suspended enrollments for revenue expectation
+    // If you want to include all, remove the $in filter.
+    const enrollments = await Enrollment.find({
+      enrollmentStatus: { $in: ["active", "completed"] }
+    }).populate("batch", "name").populate("course", "title");
+
+    let totalRevenue = 0;
+    let totalCollected = 0;
+    let totalOutstanding = 0;
+    const batchStats = {};
+
+    enrollments.forEach((enrollment) => {
+      const batchId = enrollment.batch._id.toString();
+      const batchName = enrollment.batch.name;
+      const courseName = enrollment.course.title;
+
+      totalRevenue += enrollment.totalAmount;
+      totalCollected += enrollment.paidAmount;
+      totalOutstanding += enrollment.remainingAmount;
+
+      if (!batchStats[batchId]) {
+        batchStats[batchId] = {
+          batchId,
+          batchName,
+          courseName,
+          enrolledStudents: 0,
+          totalExpectedRevenue: 0,
+          totalCollectedAmount: 0,
+          totalOutstandingFee: 0,
+        };
+      }
+
+      batchStats[batchId].enrolledStudents += 1;
+      batchStats[batchId].totalExpectedRevenue += enrollment.totalAmount;
+      batchStats[batchId].totalCollectedAmount += enrollment.paidAmount;
+      batchStats[batchId].totalOutstandingFee += enrollment.remainingAmount;
+    });
+
+    const efficiency = totalRevenue > 0 ? ((totalCollected / totalRevenue) * 100).toFixed(2) : 0;
+
+    // Calculate efficiency per batch
+    const batchWiseDetails = Object.values(batchStats).map((batch) => ({
+      ...batch,
+      efficiency: batch.totalExpectedRevenue > 0 
+        ? parseFloat(((batch.totalCollectedAmount / batch.totalExpectedRevenue) * 100).toFixed(2)) 
+        : 0
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        overall: {
+          totalRevenue,
+          totalCollected,
+          totalOutstanding,
+          efficiency: parseFloat(efficiency)
+        },
+        batchWise: batchWiseDetails
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
