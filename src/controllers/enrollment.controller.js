@@ -13,16 +13,24 @@ const { sendEmail } = require("../utils/emailService");
 /**
  * Build a payment-success HTML email body
  */
-function buildPaymentSuccessEmail({ userName, courseTitle, amount, paidAmount, totalAmount, dashboardUrl }) {
+function buildPaymentSuccessEmail({
+  userName,
+  courseTitle,
+  amount,
+  paidAmount,
+  totalAmount,
+  dashboardUrl,
+}) {
   const isFullyPaid = paidAmount >= totalAmount;
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #4F46E5;">Payment Successful! 🎉</h2>
       <p>Hello ${userName},</p>
       <p>Your payment of <strong>₹${amount}</strong> for <strong>${courseTitle}</strong> has been processed successfully.</p>
-      ${isFullyPaid
-        ? `<p>Your course fee is now <strong>fully paid</strong>. Enjoy your learning journey!</p>`
-        : `<p>Total paid so far: <strong>₹${paidAmount} / ₹${totalAmount}</strong>. Your next EMI will be due in 30 days.</p>`
+      ${
+        isFullyPaid
+          ? `<p>Your course fee is now <strong>fully paid</strong>. Enjoy your learning journey!</p>`
+          : `<p>Total paid so far: <strong>₹${paidAmount} / ₹${totalAmount}</strong>. Your next EMI will be due in 30 days.</p>`
       }
       <a href="${dashboardUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; margin: 20px 0;">
         Go to Dashboard
@@ -54,7 +62,9 @@ exports.getAvailableBatchesForEnrollment = async (req, res) => {
       startDate: { $gt: new Date() },
     })
       .populate("instructor", "name email")
-      .select("name startDate endDate schedule maxStudents currentStudents isActive isFull instructor")
+      .select(
+        "name startDate endDate schedule maxStudents currentStudents isActive isFull instructor",
+      )
       .sort("startDate");
 
     const studentEnrollments = await Enrollment.find({
@@ -105,7 +115,9 @@ exports.enrollInBatch = async (req, res) => {
     const { batchId, paymentMethod } = req.body;
 
     if (req.user.role !== "student") {
-      return res.status(403).json({ success: false, message: "Only students can enroll in batches" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Only students can enroll in batches" });
     }
 
     // KYC: student profile must exist
@@ -121,17 +133,24 @@ exports.enrollInBatch = async (req, res) => {
 
     const batch = await Batch.findById(batchId).populate("course");
     if (!batch || !batch.isActive) {
-      return res.status(404).json({ success: false, message: "Batch not found or not active" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Batch not found or not active" });
     }
     if (batch.isFull) {
       return res.status(400).json({ success: false, message: "Batch is already full" });
     }
     if (batch.startDate <= new Date()) {
-      return res.status(400).json({ success: false, message: "Batch has already started" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Batch has already started" });
     }
 
     // Prevent duplicate enrollment — but allow retry if prior enrollment never had a successful payment
-    const existingEnrollment = await Enrollment.findOne({ student: req.user.id, batch: batchId });
+    const existingEnrollment = await Enrollment.findOne({
+      student: req.user.id,
+      batch: batchId,
+    });
     if (existingEnrollment) {
       const isRecoverable =
         existingEnrollment.enrollmentStatus === "pending" ||
@@ -139,7 +158,9 @@ exports.enrollInBatch = async (req, res) => {
 
       if (!isRecoverable) {
         // Already active, completed, suspended, or cancelled by admin — deny
-        return res.status(400).json({ success: false, message: "Already enrolled in this batch" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Already enrolled in this batch" });
       }
 
       // Check if any payment for this enrollment actually succeeded
@@ -150,7 +171,9 @@ exports.enrollInBatch = async (req, res) => {
 
       if (successfulPayment) {
         // A payment did go through — the enrollment should have activated; deny re-enrollment
-        return res.status(400).json({ success: false, message: "Already enrolled in this batch" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Already enrolled in this batch" });
       }
 
       // Payment never completed — clean up the stale enrollment and its pending payments so the student can retry
@@ -171,7 +194,10 @@ exports.enrollInBatch = async (req, res) => {
     } else if (paymentMethod === "emi") {
       firstPaymentAmount = emiAmount;
     } else {
-      return res.status(400).json({ success: false, message: "Invalid payment method. Use 'fullPayment' or 'emi'" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment method. Use 'fullPayment' or 'emi'",
+      });
     }
 
     // Create enrollment in pending state
@@ -186,16 +212,15 @@ exports.enrollInBatch = async (req, res) => {
       enrollmentStatus: "pending",
       paymentStatus: "pending",
       paidAmount: 0,
-      nextPaymentDue: paymentMethod === "emi"
-        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-        : null,
+      nextPaymentDue:
+        paymentMethod === "emi" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
     });
 
     // Create Razorpay order
     const order = await paymentService.createOrder(
       firstPaymentAmount,
       "INR",
-      `enrollment_${enrollment._id}`
+      `enrollment_${enrollment._id}`,
     );
 
     // Record the pending payment
@@ -229,8 +254,13 @@ exports.enrollInBatch = async (req, res) => {
         <p style="color: #666; font-size: 12px;">ZatAcademy Team</p>
       </div>
     `;
-    sendEmail({ email: req.user.email, subject: "Enrollment Initiated - ZatAcademy", html: emailHtml })
-      .catch((err) => console.error("[Email] Failed to send enrollment email:", err.message));
+    sendEmail({
+      email: req.user.email,
+      subject: "Enrollment Initiated - ZatAcademy",
+      html: emailHtml,
+    }).catch((err) =>
+      console.error("[Email] Failed to send enrollment email:", err.message),
+    );
 
     res.status(201).json({
       success: true,
@@ -247,7 +277,7 @@ exports.enrollInBatch = async (req, res) => {
         },
         razorpay: {
           orderId: order.id,
-          amount: order.amount,       // In paise
+          amount: order.amount, // In paise
           amountInINR: firstPaymentAmount,
           currency: order.currency,
           keyId: process.env.RAZORPAY_KEY_ID,
@@ -270,7 +300,8 @@ exports.paymentCallback = async (req, res) => {
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({
         success: false,
-        message: "Missing Razorpay payment fields: razorpay_order_id, razorpay_payment_id, razorpay_signature",
+        message:
+          "Missing Razorpay payment fields: razorpay_order_id, razorpay_payment_id, razorpay_signature",
       });
     }
 
@@ -278,22 +309,28 @@ exports.paymentCallback = async (req, res) => {
     const verification = paymentService.verifyPayment(
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature
+      razorpay_signature,
     );
 
     if (!verification.success) {
-      return res.status(400).json({ success: false, message: "Payment signature verification failed" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Payment signature verification failed" });
     }
 
     // Find the pending payment record
     const payment = await Payment.findOne({ razorpayOrderId: razorpay_order_id });
     if (!payment) {
-      return res.status(404).json({ success: false, message: "Payment record not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment record not found" });
     }
 
     // Idempotency: skip if already processed
     if (payment.status === "completed") {
-      return res.status(200).json({ success: true, message: "Payment already processed" });
+      return res
+        .status(200)
+        .json({ success: true, message: "Payment already processed" });
     }
 
     // Update payment
@@ -332,8 +369,13 @@ exports.paymentCallback = async (req, res) => {
       dashboardUrl: `${process.env.FRONTEND_URL}/dashboard`,
     });
 
-    sendEmail({ email: req.user.email, subject: "Payment Successful - ZatAcademy", html: emailHtml })
-      .catch((err) => console.error("[Email] Failed to send payment success email:", err.message));
+    sendEmail({
+      email: req.user.email,
+      subject: "Payment Successful - ZatAcademy",
+      html: emailHtml,
+    }).catch((err) =>
+      console.error("[Email] Failed to send payment success email:", err.message),
+    );
 
     res.status(200).json({
       success: true,
@@ -375,7 +417,9 @@ exports.payEMI = async (req, res) => {
 
     // Authorization
     if (enrollment.student.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized to pay for this enrollment" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized to pay for this enrollment" });
     }
 
     if (enrollment.paymentMethod !== "emi") {
@@ -387,7 +431,9 @@ exports.payEMI = async (req, res) => {
     }
 
     if (enrollment.enrollmentStatus === "cancelled") {
-      return res.status(400).json({ success: false, message: "Enrollment has been cancelled" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Enrollment has been cancelled" });
     }
 
     // Find the last paid EMI number
@@ -406,7 +452,7 @@ exports.payEMI = async (req, res) => {
     const order = await paymentService.createOrder(
       emiAmount,
       "INR",
-      `emi_${enrollment._id}_${nextEmiNumber}`
+      `emi_${enrollment._id}_${nextEmiNumber}`,
     );
 
     // Record pending payment
@@ -432,7 +478,7 @@ exports.payEMI = async (req, res) => {
         paymentRecord: payment._id,
         razorpay: {
           orderId: order.id,
-          amount: order.amount,       // In paise
+          amount: order.amount, // In paise
           amountInINR: emiAmount,
           currency: order.currency,
           keyId: process.env.RAZORPAY_KEY_ID,
@@ -457,7 +503,9 @@ exports.razorpayWebhook = async (req, res) => {
   try {
     const signature = req.headers["x-razorpay-signature"];
     if (!signature) {
-      return res.status(400).json({ success: false, message: "Missing webhook signature" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing webhook signature" });
     }
 
     // Verify webhook signature using raw body
@@ -465,7 +513,9 @@ exports.razorpayWebhook = async (req, res) => {
     const isValid = paymentService.verifyWebhookSignature(rawBody, signature);
     if (!isValid) {
       console.warn("[Webhook] Invalid signature received");
-      return res.status(400).json({ success: false, message: "Invalid webhook signature" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid webhook signature" });
     }
 
     const event = req.body;
@@ -519,10 +569,12 @@ exports.razorpayWebhook = async (req, res) => {
           totalAmount: enrollment.totalAmount,
           dashboardUrl: `${process.env.FRONTEND_URL}/dashboard`,
         });
-        sendEmail({ email: student.email, subject: "Payment Confirmed - ZatAcademy", html: emailHtml })
-          .catch((err) => console.error("[Email] Failed:", err.message));
+        sendEmail({
+          email: student.email,
+          subject: "Payment Confirmed - ZatAcademy",
+          html: emailHtml,
+        }).catch((err) => console.error("[Email] Failed:", err.message));
       }
-
     } else if (eventType === "payment.failed") {
       const razorpayPayment = event.payload.payment.entity;
       const { order_id, id: paymentId } = razorpayPayment;
@@ -530,7 +582,7 @@ exports.razorpayWebhook = async (req, res) => {
       const failedPayment = await Payment.findOneAndUpdate(
         { razorpayOrderId: order_id },
         { status: "failed", razorpayPaymentId: paymentId },
-        { new: true }
+        { new: true },
       );
 
       // Mark the enrollment as 'failed' so the student is allowed to retry enrollment
@@ -570,14 +622,16 @@ exports.getPaymentHistory = async (req, res) => {
     }
 
     // Authorization
-    if (
-      req.user.role === "student" &&
-      enrollment.student.toString() !== req.user.id
-    ) {
-      return res.status(403).json({ success: false, message: "Not authorized to view this enrollment's payments" });
+    if (req.user.role === "student" && enrollment.student.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view this enrollment's payments",
+      });
     }
 
-    const payments = await Payment.find({ enrollment: enrollmentId }).sort("emiNumber paymentDate");
+    const payments = await Payment.find({ enrollment: enrollmentId }).sort(
+      "emiNumber paymentDate",
+    );
 
     res.status(200).json({
       success: true,
@@ -641,7 +695,10 @@ exports.getBatchEnrollments = async (req, res) => {
     }
 
     if (req.user.role === "instructor" && batch.instructor.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized to view enrollments for this batch" });
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view enrollments for this batch",
+      });
     }
 
     const enrollments = await Enrollment.find({ batch: req.params.batchId })
@@ -673,11 +730,18 @@ exports.getEnrollment = async (req, res) => {
       return res.status(404).json({ success: false, message: "Enrollment not found" });
     }
 
-    if (req.user.role === "student" && enrollment.student._id.toString() !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized to view this enrollment" });
+    if (
+      req.user.role === "student" &&
+      enrollment.student._id.toString() !== req.user.id
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized to view this enrollment" });
     }
 
-    const payments = await Payment.find({ enrollment: enrollment._id }).sort("emiNumber paymentDate");
+    const payments = await Payment.find({ enrollment: enrollment._id }).sort(
+      "emiNumber paymentDate",
+    );
 
     res.status(200).json({
       success: true,
@@ -703,12 +767,17 @@ exports.cancelEnrollment = async (req, res) => {
       req.user.role !== "superAdmin" &&
       enrollment.student.toString() !== req.user.id
     ) {
-      return res.status(403).json({ success: false, message: "Not authorized to cancel this enrollment" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Not authorized to cancel this enrollment" });
     }
 
     const batch = await Batch.findById(enrollment.batch);
     if (batch.startDate <= new Date()) {
-      return res.status(400).json({ success: false, message: "Cannot cancel enrollment after batch has started" });
+      return res.status(400).json({
+        success: false,
+        message: "Cannot cancel enrollment after batch has started",
+      });
     }
 
     const wasActive = enrollment.enrollmentStatus === "active";
@@ -740,8 +809,10 @@ exports.getRevenueStats = async (req, res) => {
     // Only include non-cancelled/suspended enrollments for revenue expectation
     // If you want to include all, remove the $in filter.
     const enrollments = await Enrollment.find({
-      enrollmentStatus: { $in: ["active", "completed"] }
-    }).populate("batch", "name").populate("course", "title");
+      enrollmentStatus: { $in: ["active", "completed"] },
+    })
+      .populate("batch", "name")
+      .populate("course", "title");
 
     let totalRevenue = 0;
     let totalCollected = 0;
@@ -775,14 +846,20 @@ exports.getRevenueStats = async (req, res) => {
       batchStats[batchId].totalOutstandingFee += enrollment.remainingAmount;
     });
 
-    const efficiency = totalRevenue > 0 ? ((totalCollected / totalRevenue) * 100).toFixed(2) : 0;
+    const efficiency =
+      totalRevenue > 0 ? ((totalCollected / totalRevenue) * 100).toFixed(2) : 0;
 
     // Calculate efficiency per batch
     const batchWiseDetails = Object.values(batchStats).map((batch) => ({
       ...batch,
-      efficiency: batch.totalExpectedRevenue > 0 
-        ? parseFloat(((batch.totalCollectedAmount / batch.totalExpectedRevenue) * 100).toFixed(2)) 
-        : 0
+      efficiency:
+        batch.totalExpectedRevenue > 0
+          ? parseFloat(
+              ((batch.totalCollectedAmount / batch.totalExpectedRevenue) * 100).toFixed(
+                2,
+              ),
+            )
+          : 0,
     }));
 
     res.status(200).json({
@@ -792,12 +869,11 @@ exports.getRevenueStats = async (req, res) => {
           totalRevenue,
           totalCollected,
           totalOutstanding,
-          efficiency: parseFloat(efficiency)
+          efficiency: parseFloat(efficiency),
         },
-        batchWise: batchWiseDetails
-      }
+        batchWise: batchWiseDetails,
+      },
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

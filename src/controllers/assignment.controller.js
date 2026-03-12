@@ -22,6 +22,13 @@ exports.createAssignment = async (req, res) => {
       });
     }
 
+    if (!batch.course) {
+      return res.status(404).json({
+        success: false,
+        message: "Associated course not found",
+      });
+    }
+
     if (
       batch.instructor.toString() !== req.user.id &&
       req.user.role !== "admin" &&
