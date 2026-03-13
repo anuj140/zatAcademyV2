@@ -801,6 +801,135 @@ exports.cancelEnrollment = async (req, res) => {
   }
 };
 
+// @desc    Get enrollment summary stats for the admin dashboard
+// @route   GET /api/v1/enrollments/admin/stats
+// @access  Private/Admin/SuperAdmin
+exports.getEnrollmentStats = async (req, res) => {
+  try {
+    const [totalEnrolled, activeStudents, feesCompleted, outstandingAgg] = await Promise.all([
+      // All enrollments that are not in a pre-payment/failed state
+      Enrollment.countDocuments({
+        enrollmentStatus: { $in: ["active", "completed", "suspended", "cancelled"] },
+      }),
+
+      // Currently active students
+      Enrollment.countDocuments({ enrollmentStatus: "active" }),
+
+      // Students whose fees are fully paid
+      Enrollment.countDocuments({ paymentStatus: "paid" }),
+
+      // Sum of outstanding (remaining) fees across all active/partially-paid enrollments
+      Enrollment.aggregate([
+        {
+          $match: {
+            enrollmentStatus: { $in: ["active", "completed"] },
+            remainingAmount: { $gt: 0 },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalOutstanding: { $sum: "$remainingAmount" },
+          },
+        },
+      ]),
+    ]);
+
+    const outstandingFees = outstandingAgg.length > 0 ? outstandingAgg[0].totalOutstanding : 0;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalEnrolled,
+        activeStudents,
+        feesCompleted,
+        outstandingFees,
+      },
+    });
+  } catch (error) {
+    console.error("[getEnrollmentStats]", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get all enrolled students list (admin view) with filters
+// @route   GET /api/v1/enrollments/admin/students
+// @query   status=active|inactive   (optional)
+// @query   batchId=<ObjectId>       (optional)
+// @query   page=1 limit=20          (optional, defaults: page=1, limit=20)
+// @access  Private/Admin/SuperAdmin
+exports.getAdminStudentList = async (req, res) => {
+  try {
+    const { status, batchId, page = 1, limit = 20 } = req.query;
+
+    // Build filter
+    const filter = {
+      // Exclude purely pre-payment enrollments (pending/failed with no payment)
+      enrollmentStatus: { $in: ["active", "completed", "suspended", "cancelled"] },
+    };
+
+    if (status === "active") {
+      filter.enrollmentStatus = "active";
+    } else if (status === "inactive") {
+      // Everything except active
+      filter.enrollmentStatus = { $in: ["completed", "suspended", "cancelled"] };
+    }
+
+    if (batchId) {
+      filter.batch = batchId;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [enrollments, total] = await Promise.all([
+      Enrollment.find(filter)
+        .populate("student", "name email")
+        .populate("batch", "name")
+        .populate("course", "title")
+        .sort("-enrollmentDate")
+        .skip(skip)
+        .limit(parseInt(limit)),
+      Enrollment.countDocuments(filter),
+    ]);
+
+    const data = enrollments.map((e) => ({
+      enrollmentId: e._id,
+      student: {
+        id: e.student?._id,
+        name: e.student?.name,
+        email: e.student?.email,
+      },
+      batch: {
+        id: e.batch?._id,
+        name: e.batch?.name,
+      },
+      course: {
+        id: e.course?._id,
+        title: e.course?.title,
+      },
+      feesPaid: e.paidAmount,
+      feesOutstanding: e.remainingAmount,
+      totalFees: e.totalAmount,
+      paymentMethod: e.paymentMethod,
+      paymentStatus: e.paymentStatus,
+      enrollmentStatus: e.enrollmentStatus,
+      enrollmentDate: e.enrollmentDate,
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: data.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / parseInt(limit)),
+      data,
+    });
+  } catch (error) {
+    console.error("[getAdminStudentList]", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Get revenue stats (total, collected, outstanding, efficiency, and batch-wise)
 // @route   GET /api/v1/enrollments/stats/revenue
 // @access  Private/Admin/SuperAdmin

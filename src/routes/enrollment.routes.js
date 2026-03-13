@@ -12,6 +12,8 @@ const {
   getPaymentHistory,
   cancelEnrollment,
   getRevenueStats,
+  getEnrollmentStats,
+  getAdminStudentList,
 } = require('../controllers/enrollment.controller');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/role');
@@ -40,10 +42,30 @@ router.use(protect);
 // Frontend payment callback (student-authenticated, after Razorpay checkout)
 router.post('/payment-callback', paymentCallback);
 
+// ─── Static/Named Routes (must come before /:id wildcards) ────────────────────
+
 // Student enrollment
 router.get('/batches/course/:courseId', authorize('student'), getAvailableBatchesForEnrollment);
 router.post('/', authorize('student'), enrollInBatch);
 router.get('/my-enrollments', authorize('student'), getMyEnrollments);
+
+// Admin / SuperAdmin revenue stats
+router.get('/stats/revenue', authorize('admin', 'superAdmin'), getRevenueStats);
+
+// Admin dashboard — enrollment summary stats (total enrolled, active, fees completed, outstanding)
+router.get('/admin/stats', authorize('admin', 'superAdmin'), getEnrollmentStats);
+
+// Admin dashboard — full student list (filterable by status & batch, paginated)
+router.get('/admin/students', authorize('admin', 'superAdmin'), getAdminStudentList);
+
+// Admin/Instructor — enrollments for a specific batch
+router.get(
+  '/batches/:batchId/enrollments',
+  authorize('admin', 'superAdmin', 'instructor'),
+  getBatchEnrollments
+);
+
+// ─── Wildcard Routes (/:id and /:enrollmentId) — keep last ────────────────────
 
 // Pay next EMI
 router.post('/:enrollmentId/pay-emi', authorize('student'), payEMI);
@@ -56,19 +78,5 @@ router.get('/:id', getEnrollment);
 
 // Cancel enrollment
 router.put('/:id/cancel', cancelEnrollment);
-
-// Admin / SuperAdmin revenue stats (must be placed before /:id to avoid matching :id)
-router.get(
-  '/stats/revenue',
-  authorize('admin', 'superAdmin'),
-  getRevenueStats
-);
-
-// Admin/Instructor routes
-router.get(
-  '/batches/:batchId/enrollments',
-  authorize('admin', 'superAdmin', 'instructor'),
-  getBatchEnrollments
-);
 
 module.exports = router;
