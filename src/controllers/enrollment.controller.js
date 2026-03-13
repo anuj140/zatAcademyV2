@@ -801,6 +801,118 @@ exports.cancelEnrollment = async (req, res) => {
   }
 };
 
+// @desc    Get full payment history for a student (all enrollments) — admin view
+// @route   GET /api/v1/enrollments/admin/students/:studentId/payments
+// @access  Private/Admin/SuperAdmin
+exports.getStudentPaymentHistory = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // Validate the student exists and is actually a student
+    const student = await User.findById(studentId).select("name email role");
+    if (!student) {
+      return res.status(404).json({ success: false, message: "Student not found" });
+    }
+    if (student.role !== "student") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Provided ID does not belong to a student" });
+    }
+
+    // Fetch all enrollments for this student
+    const enrollments = await Enrollment.find({ student: studentId })
+      .populate("batch", "name startDate endDate")
+      .populate("course", "title fee")
+      .sort("-enrollmentDate");
+
+    if (enrollments.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          student: { id: student._id, name: student.name, email: student.email },
+          enrollments: [],
+          summary: {
+            totalEnrollments: 0,
+            totalFees: 0,
+            totalPaid: 0,
+            totalOutstanding: 0,
+            totalPaymentTransactions: 0,
+          },
+        },
+      });
+    }
+
+    const enrollmentIds = enrollments.map((e) => e._id);
+
+    // Fetch all payments across all enrollments in one query
+    const allPayments = await Payment.find({ enrollment: { $in: enrollmentIds } }).sort(
+      "enrollment emiNumber paymentDate"
+    );
+
+    // Group payments by enrollmentId for fast lookup
+    const paymentsByEnrollment = {};
+    allPayments.forEach((p) => {
+      const key = p.enrollment.toString();
+      if (!paymentsByEnrollment[key]) paymentsByEnrollment[key] = [];
+      paymentsByEnrollment[key].push(p);
+    });
+
+    // Build per-enrollment breakdown
+    const enrollmentBreakdowns = enrollments.map((e) => {
+      const payments = paymentsByEnrollment[e._id.toString()] || [];
+      const completedPayments = payments.filter((p) => p.status === "completed");
+      const pendingPayments = payments.filter((p) => p.status === "pending");
+      const failedPayments = payments.filter((p) => p.status === "failed");
+
+      return {
+        enrollmentId: e._id,
+        batch: { id: e.batch?._id, name: e.batch?.name },
+        course: { id: e.course?._id, title: e.course?.title },
+        enrollmentStatus: e.enrollmentStatus,
+        paymentStatus: e.paymentStatus,
+        paymentMethod: e.paymentMethod,
+        totalFees: e.totalAmount,
+        feesPaid: e.paidAmount,
+        feesOutstanding: e.remainingAmount,
+        emiMonths: e.emiMonths,
+        nextPaymentDue: e.nextPaymentDue,
+        enrollmentDate: e.enrollmentDate,
+        paymentTransactions: payments,
+        transactionSummary: {
+          total: payments.length,
+          completed: completedPayments.length,
+          pending: pendingPayments.length,
+          failed: failedPayments.length,
+        },
+      };
+    });
+
+    // Overall summary across all enrollments
+    const summary = enrollments.reduce(
+      (acc, e) => {
+        acc.totalFees += e.totalAmount;
+        acc.totalPaid += e.paidAmount;
+        acc.totalOutstanding += e.remainingAmount;
+        return acc;
+      },
+      { totalEnrollments: enrollments.length, totalFees: 0, totalPaid: 0, totalOutstanding: 0 }
+    );
+    summary.totalPaymentTransactions = allPayments.length;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        student: { id: student._id, name: student.name, email: student.email },
+        enrollments: enrollmentBreakdowns,
+        summary,
+      },
+    });
+  } catch (error) {
+    console.error("[getStudentPaymentHistory]", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Get enrollment summary stats for the admin dashboard
 // @route   GET /api/v1/enrollments/admin/stats
 // @access  Private/Admin/SuperAdmin

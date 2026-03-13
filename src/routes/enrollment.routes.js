@@ -14,6 +14,7 @@ const {
   getRevenueStats,
   getEnrollmentStats,
   getAdminStudentList,
+  getStudentPaymentHistory,
 } = require('../controllers/enrollment.controller');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/role');
@@ -57,6 +58,9 @@ router.get('/admin/stats', authorize('admin', 'superAdmin'), getEnrollmentStats)
 
 // Admin dashboard — full student list (filterable by status & batch, paginated)
 router.get('/admin/students', authorize('admin', 'superAdmin'), getAdminStudentList);
+
+// Admin dashboard — full payment history for an individual student (all enrollments)
+router.get('/admin/students/:studentId/payments', authorize('admin', 'superAdmin'), getStudentPaymentHistory);
 
 // Admin/Instructor — enrollments for a specific batch
 router.get(
