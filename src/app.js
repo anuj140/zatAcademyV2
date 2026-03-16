@@ -24,6 +24,7 @@ const progressRoutes = require("./routes/progress.routes"); // NEW
 const analyticsRoutes = require("./routes/analytics.routes"); // NEW
 const moduleRoutes = require("./routes/module.routes"); // New
 const studentProfileRoutes = require("./routes/studentProfile.routes"); // NEW
+const emailTemplateRoutes = require("./routes/emailTemplate.routes"); // NEW
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use("/api/v1/progress", progressRoutes); // NEW
 app.use("/api/v1/analytics", analyticsRoutes); // NEW
 app.use("/api/v1/modules", moduleRoutes); // New
 app.use("/api/v1/student-profiles", studentProfileRoutes); // NEW
+app.use("/api/v1/email-templates", emailTemplateRoutes); // NEW
 
 // Health check route
 app.get("/health", (req, res) => {
