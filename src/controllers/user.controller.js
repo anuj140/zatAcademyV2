@@ -33,11 +33,22 @@ exports.createUser = async (req, res) => {
       role
     });
     
-    // Send welcome email with password
-    await sendWelcomeEmail(user, password || 'Please use the password set by admin');
-    
+    // Send welcome email — fire-and-forget; user is already saved to DB.
+    // Email failure must NOT roll back the user creation or return a failure response.
+    let emailSent = true;
+    let emailError = null;
+    try {
+      await sendWelcomeEmail(user, password || 'Please use the password set by admin');
+    } catch (err) {
+      emailSent = false;
+      emailError = 'Welcome email could not be sent. Please share credentials with the user manually.';
+      console.error('[createUser] Failed to send welcome email:', err.message);
+    }
+
     res.status(201).json({
       success: true,
+      emailSent,
+      ...(emailError && { emailError }),
       user: {
         id: user._id,
         name: user.name,

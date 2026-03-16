@@ -174,8 +174,10 @@ exports.replyToDoubt = async (req, res) => {
 
     await doubt.save();
 
-    // Send notifications
-    await sendReplyNotification(doubt, reply, req.user);
+    // Non-blocking: email failure must not break the reply response
+    sendReplyNotification(doubt, reply, req.user).catch(err =>
+      console.error('[addReply] Email notification failed:', err.message)
+    );
 
     res.status(201).json({
       success: true,
@@ -380,8 +382,10 @@ exports.resolveDoubt = async (req, res) => {
 
     await doubt.save();
 
-    // Send resolution notification
-    await sendDoubtNotification(doubt, null, "resolved");
+    // Non-blocking: email failure must not break the resolve response
+    sendDoubtNotification(doubt, null, 'resolved').catch(err =>
+      console.error('[resolveDoubt] Email notification failed:', err.message)
+    );
 
     res.status(200).json({
       success: true,

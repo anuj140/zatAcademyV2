@@ -61,8 +61,10 @@ exports.gradeSubmission = async (req, res) => {
     // Update grade record
     await updateGradeRecord(submission, assignment);
     
-    // Send grade notification to student
-    await sendGradeNotification(submission);
+    // Non-blocking: email failure must not break the grade response
+    sendGradeNotification(submission).catch(err =>
+      console.error('[gradeSubmission] Email notification failed:', err.message)
+    );
     
     res.status(200).json({
       success: true,
@@ -152,8 +154,10 @@ exports.bulkGradeSubmissions = async (req, res) => {
         // Update grade record
         await updateGradeRecord(submission, assignment);
         
-        // Send grade notification
-        await sendGradeNotification(submission);
+        // Non-blocking: email failure must not break bulk grading
+        sendGradeNotification(submission).catch(err =>
+          console.error('[bulkGradeSubmissions] Email notification failed:', err.message)
+        );
         
         results.successful++;
       } catch (error) {
@@ -326,8 +330,10 @@ exports.finalizeBatchGrades = async (req, res) => {
       
       await grade.save();
       
-      // Send final grade notification
-      await sendFinalGradeNotification(grade);
+      // Non-blocking: email failure must not break grade finalisation
+      sendFinalGradeNotification(grade).catch(err =>
+        console.error('[finalizeBatchGrades] Email notification failed:', err.message)
+      );
     }
     
     res.status(200).json({
