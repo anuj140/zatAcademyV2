@@ -478,3 +478,161 @@ exports.deleteSubmission = async (req, res) => {
     });
   }
 };
+
+// ── Shared helpers ─────────────────────────────────────────────────────────────
+
+function mimeToResourceType(mimeType = '') {
+  if (!mimeType) return 'raw';
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'raw';
+}
+
+function buildCloudinaryUrl(publicId, resourceType, forDownload, originalName) {
+  const options = {
+    resource_type: resourceType,
+    sign_url: true,
+    expires_at: Math.floor(Date.now() / 1000) + 60 * 60, // 1 hour
+    type: 'upload',
+  };
+
+  if (forDownload && originalName) {
+    options.flags = `attachment:${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  }
+
+  return cloudinary.url(publicId, options);
+}
+
+/**
+ * Verify that the requesting user is allowed to access the given submission's files.
+ * - Student: only their own submission
+ * - Instructor / admin / superAdmin: any submission in a batch they manage
+ */
+async function authoriseFileAccess(submission, user) {
+  // Student — only own submissions
+  if (user.role === 'student') {
+    return submission.student.toString() === user.id;
+  }
+  // Admin / superAdmin — full access
+  if (user.role === 'admin' || user.role === 'superAdmin') return true;
+  // Instructor — must be the instructor of that batch
+  if (user.role === 'instructor') {
+    const batch = await Batch.findById(submission.batch).select('instructor');
+    return batch && batch.instructor.toString() === user.id;
+  }
+  return false;
+}
+
+// ── Download submission file ───────────────────────────────────────────────────
+// @desc    Generate a signed Cloudinary download URL for one submission file
+// @route   GET /api/v1/submissions/:submissionId/files/:fileIndex/download
+// @access  Private — student (own) / instructor (their batch) / admin
+exports.downloadSubmissionFile = async (req, res) => {
+  try {
+    const { submissionId, fileIndex } = req.params;
+    const idx = parseInt(fileIndex, 10);
+
+    const submission = await Submission.findById(submissionId);
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    // Authorisation
+    const allowed = await authoriseFileAccess(submission, req.user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this submission file',
+      });
+    }
+
+    if (!submission.files || submission.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'This submission has no files' });
+    }
+    if (isNaN(idx) || idx < 0 || idx >= submission.files.length) {
+      return res.status(400).json({
+        success: false,
+        message: `File index ${fileIndex} is out of range (0–${submission.files.length - 1})`,
+      });
+    }
+
+    const file = submission.files[idx];
+    let downloadUrl;
+
+    if (file.public_id) {
+      const resourceType = mimeToResourceType(file.mimeType);
+      downloadUrl = buildCloudinaryUrl(file.public_id, resourceType, true, file.originalName);
+    } else {
+      downloadUrl = file.url; // fallback
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: downloadUrl,
+        filename: file.originalName || `file_${idx}`,
+        mimeType: file.mimeType || 'application/octet-stream',
+        size: file.size,
+        expiresIn: 3600,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── Preview submission file ────────────────────────────────────────────────────
+// @desc    Return a signed Cloudinary URL suitable for inline preview
+// @route   GET /api/v1/submissions/:submissionId/files/:fileIndex/preview
+// @access  Private — student (own) / instructor (their batch) / admin
+exports.previewSubmissionFile = async (req, res) => {
+  try {
+    const { submissionId, fileIndex } = req.params;
+    const idx = parseInt(fileIndex, 10);
+
+    const submission = await Submission.findById(submissionId);
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    const allowed = await authoriseFileAccess(submission, req.user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this submission file',
+      });
+    }
+
+    if (!submission.files || submission.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'This submission has no files' });
+    }
+    if (isNaN(idx) || idx < 0 || idx >= submission.files.length) {
+      return res.status(400).json({
+        success: false,
+        message: `File index ${fileIndex} is out of range (0–${submission.files.length - 1})`,
+      });
+    }
+
+    const file = submission.files[idx];
+    let previewUrl;
+
+    if (file.public_id) {
+      const resourceType = mimeToResourceType(file.mimeType);
+      previewUrl = buildCloudinaryUrl(file.public_id, resourceType, false, null);
+    } else {
+      previewUrl = file.url;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: previewUrl,
+        filename: file.originalName || `file_${idx}`,
+        mimeType: file.mimeType || 'application/octet-stream',
+        expiresIn: 3600,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

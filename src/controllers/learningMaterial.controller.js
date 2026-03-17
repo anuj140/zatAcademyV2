@@ -486,3 +486,150 @@ function getProviderFromUrl(url) {
   if (url.includes("github.com")) return "github";
   return "external";
 }
+
+// ── Helpers shared by download/preview ────────────────────────────────────────
+
+/**
+ * Build a signed Cloudinary URL.
+ * @param {string} publicId   Cloudinary public_id stored in material.file.public_id
+ * @param {string} resourceType  'image' | 'video' | 'raw' — use 'raw' for documents
+ * @param {boolean} forDownload  When true adds fl_attachment so browser downloads the file
+ * @param {string} originalName  Used as the download filename
+ */
+function buildCloudinaryUrl(publicId, resourceType, forDownload, originalName) {
+  const options = {
+    resource_type: resourceType,
+    sign_url: true,
+    expires_at: Math.floor(Date.now() / 1000) + 60 * 60, // 1 hour
+    type: 'upload',
+  };
+
+  if (forDownload && originalName) {
+    // fl_attachment instructs the browser to download the file, not display it
+    options.flags = `attachment:${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  }
+
+  return cloudinary.url(publicId, options);
+}
+
+/**
+ * Determine Cloudinary resource_type from a MIME type.
+ * Cloudinary uses 'raw' for documents (PDF, DOC...) and 'video' for video
+ */
+function mimeToResourceType(mimeType = '') {
+  if (!mimeType) return 'raw';
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'raw'; // PDF, DOC, ZIP, TXT, etc.
+}
+
+// ── Download material file ─────────────────────────────────────────────────────
+// @desc    Generate a signed download URL for a learning material file
+// @route   GET /api/v1/learning-materials/:id/download
+// @access  Private — enrolled student / instructor / admin
+exports.downloadMaterial = async (req, res) => {
+  try {
+    const material = await LearningMaterial.findById(req.params.id);
+
+    if (!material) {
+      return res.status(404).json({ success: false, message: 'Learning material not found' });
+    }
+
+    // Must have a stored file to download
+    if (!material.file || !material.file.url) {
+      // If it's an external URL redirect to it
+      if (material.externalUrl) {
+        return res.redirect(material.externalUrl);
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'This material has no downloadable file attached',
+      });
+    }
+
+    const { public_id, mimeType, originalName } = material.file;
+
+    // If public_id exists we can build a proper signed Cloudinary URL
+    let downloadUrl;
+    if (public_id) {
+      const resourceType = mimeToResourceType(mimeType);
+      downloadUrl = buildCloudinaryUrl(public_id, resourceType, true, originalName);
+    } else {
+      // Fallback: use the plain stored URL (won't force download, but still works)
+      downloadUrl = material.file.url;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: downloadUrl,
+        filename: originalName || material.title,
+        mimeType: mimeType || 'application/octet-stream',
+        size: material.file.size,
+        expiresIn: 3600, // seconds
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── Preview material file ──────────────────────────────────────────────────────
+// @desc    Return URL/info needed for inline preview of a learning material
+// @route   GET /api/v1/learning-materials/:id/preview
+// @access  Private — enrolled student / instructor / admin
+exports.previewMaterial = async (req, res) => {
+  try {
+    const material = await LearningMaterial.findById(req.params.id);
+
+    if (!material) {
+      return res.status(404).json({ success: false, message: 'Learning material not found' });
+    }
+
+    // External URL (YouTube, Vimeo, GitHub) — client embeds/opens directly
+    if (material.externalUrl) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          type: 'external',
+          url: material.externalUrl,
+          provider: material.externalProvider || 'external',
+          materialType: material.materialType,
+          title: material.title,
+        },
+      });
+    }
+
+    if (!material.file || !material.file.url) {
+      return res.status(400).json({
+        success: false,
+        message: 'This material has no file to preview',
+      });
+    }
+
+    const { public_id, mimeType, originalName } = material.file;
+
+    // For preview we return plain (non-attachment) URL — browser handles rendering
+    let previewUrl;
+    if (public_id) {
+      const resourceType = mimeToResourceType(mimeType);
+      previewUrl = buildCloudinaryUrl(public_id, resourceType, false, null);
+    } else {
+      previewUrl = material.file.url;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        type: 'file',
+        url: previewUrl,
+        mimeType: mimeType || 'application/octet-stream',
+        filename: originalName || material.title,
+        materialType: material.materialType,
+        expiresIn: 3600,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

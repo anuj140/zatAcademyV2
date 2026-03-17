@@ -180,8 +180,30 @@ const uploadDoubtAttachment = multer({
   }
 });
 
+// Configure Cloudinary storage for student submission files
+const submissionFilesStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: process.env.CLOUDINARY_SUBMISSIONS_FOLDER || 'zatAcademy/submissions',
+    allowed_formats: [
+      'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'zip',
+      'jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov',
+    ],
+    resource_type: 'auto',
+  },
+});
+
+const uploadSubmissionFiles = multer({
+  storage: submissionFilesStorage,
+  fileFilter: sessionMaterialsFilter, // reuse existing file-type filter
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+  },
+});
+
 // Export new middleware
 exports.uploadDoubtAttachments = uploadDoubtAttachment.array('attachments', 5); // Max 5 files
+exports.uploadSubmissionFiles = uploadSubmissionFiles.array('files', 5); // Max 5 files per submission
 
 // Error handling middleware
 exports.handleUploadError = (err, req, res, next) => {

@@ -28,7 +28,6 @@ exports.createDoubt = async (req, res) => {
       enrollmentStatus: "active",
       accessRevoked: false,
     });
-    console.log("enrollment: ", enrollment);
 
     if (!enrollment) {
       return res.status(403).json({

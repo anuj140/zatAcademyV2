@@ -904,3 +904,206 @@ async function updateGradeRecord(submission, assignment) {
   }
 }
 ```
+## Upload to directly cloudinary 
+
+```js
+// Configure Cloudinary storage for student submission files
+const submissionFilesStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: process.env.CLOUDINARY_SUBMISSIONS_FOLDER || 'zatAcademy/submissions',
+    allowed_formats: [
+      'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'zip',
+      'jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov',
+    ],
+    resource_type: 'auto',
+  },
+});
+
+const uploadSubmissionFiles = multer({
+  storage: submissionFilesStorage,
+  fileFilter: sessionMaterialsFilter, // reuse existing file-type filter
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+  },
+});
+
+// Export new middleware
+exports.uploadDoubtAttachments = uploadDoubtAttachment.array('attachments', 5); // Max 5 files
+exports.uploadSubmissionFiles = uploadSubmissionFiles.array('files', 5); // Max 5 files per submission
+```
+
+```js
+exports.downloadMaterial = async (req, res) => {
+  try {
+    //1. Extract learning material id form url
+    const material = await LearningMaterial.findById(req.params.id);
+    //2. If there no material found
+    if (!material) {
+      //  - return (not found error) with message 'Learning material not found'
+      return res.status(404).json({ success: false, message: 'Learning material not found' });
+    }
+
+    // Must have a stored file to download
+    //3. If there is no file to document or no file url 
+    if (!material.file || !material.file.url) {
+      // If it's an external URL redirect to it
+      // -- if document has external url
+      if (material.externalUrl) {
+        // -- redirect user to that external url
+        return res.redirect(material.externalUrl);
+      }
+      //4. Return message 'This material does no have downloadable file attached'
+      return res.status(400).json({
+        success: false,
+        message: 'This material has no downloadable file attached',
+      });
+    }
+    //5. Extract public id, mimeType and originalName out of material file 
+    const { public_id, mimeType, originalName } = material.file;
+
+    // If public_id exists we can build a proper signed Cloudinary URL
+    let downloadUrl;
+    if (public_id) {
+      const resourceType = mimeToResourceType(mimeType);
+      downloadUrl = buildCloudinaryUrl(public_id, resourceType, true, originalName);
+    } else {
+      // Fallback: use the plain stored URL (won't force download, but still works)
+      downloadUrl = material.file.url;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: downloadUrl,
+        filename: originalName || material.title,
+        mimeType: mimeType || 'application/octet-stream',
+        size: material.file.size,
+        expiresIn: 3600, // seconds
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```
+
+```js
+exports.downloadSubmissionFile = async (req, res) => {
+  try {
+    //1. Extract submissionId and fileIndex form url
+    const { submissionId, fileIndex } = req.params
+    //2. Convert the fileIndex to number
+    const idx = parseInt(fileIndex, 10);
+    //3. Find the file submission 
+    const submission = await Submission.findById(submissionId);
+    //4. If it is present
+    //    - return (not found error) with message "Submission not found"
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    // Authorisation
+    //5. 
+    const allowed = await authoriseFileAccess(submission, req.user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this submission file',
+      });
+    }
+    //6. If submission does have file attach or submission files length is zero
+    //  - return "The submission has no files"
+    if (!submission.files || submission.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'This submission has no files' });
+    }
+    //7. If idx is not number or idx is less than zero or idx is greater than files attach length
+    // - return message" file index is out of range"
+    if (isNaN(idx) || idx < 0 || idx >= submission.files.length) {
+      return res.status(400).json({
+        success: false,
+        message: `File index ${fileIndex} is out of range (0–${submission.files.length - 1})`,
+      });
+    }
+    //8. Search for submission files by index
+    const file = submission.files[idx];
+    let downloadUrl;
+
+    if (file.public_id) {
+      const resourceType = mimeToResourceType(file.mimeType);
+      downloadUrl = buildCloudinaryUrl(file.public_id, resourceType, true, file.originalName);
+    } else {
+      downloadUrl = file.url; // fallback
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: downloadUrl,
+        filename: file.originalName || `file_${idx}`,
+        mimeType: file.mimeType || 'application/octet-stream',
+        size: file.size,
+        expiresIn: 3600,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```
+
+
+```js
+exports.previewSubmissionFile = async (req, res) => {
+  try {
+    //1. Extract submissionId and fileIndex form 
+    const { submissionId, fileIndex } = req.params;
+    const idx = parseInt(fileIndex, 10);
+
+    const submission = await Submission.findById(submissionId);
+    if (!submission) {
+      return res.status(404).json({ success: false, message: 'Submission not found' });
+    }
+
+    const allowed = await authoriseFileAccess(submission, req.user);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this submission file',
+      });
+    }
+
+    if (!submission.files || submission.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'This submission has no files' });
+    }
+    if (isNaN(idx) || idx < 0 || idx >= submission.files.length) {
+      return res.status(400).json({
+        success: false,
+        message: `File index ${fileIndex} is out of range (0–${submission.files.length - 1})`,
+      });
+    }
+
+    const file = submission.files[idx];
+    let previewUrl;
+
+    if (file.public_id) {
+      const resourceType = mimeToResourceType(file.mimeType);
+      previewUrl = buildCloudinaryUrl(file.public_id, resourceType, false, null);
+    } else {
+      previewUrl = file.url;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        url: previewUrl,
+        filename: file.originalName || `file_${idx}`,
+        mimeType: file.mimeType || 'application/octet-stream',
+        expiresIn: 3600,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```

@@ -8,6 +8,8 @@ const {
   deleteLearningMaterial,
   togglePublish,
   getMaterialStats,
+  downloadMaterial,
+  previewMaterial,
 } = require("../controllers/learningMaterial.controller");
 const { protect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
@@ -56,5 +58,10 @@ router.delete(
   deleteLearningMaterial,
 );
 router.put("/:id/publish", authorize("instructor", "admin", "superAdmin"), togglePublish);
+
+// ── Download & Preview ─────────────────────────────────────────────────────────
+// @access  Private — any authenticated user who can reach the material
+router.get("/:id/download", downloadMaterial);
+router.get("/:id/preview", previewMaterial);
 
 module.exports = router;

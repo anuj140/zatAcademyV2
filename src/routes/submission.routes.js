@@ -7,20 +7,13 @@ const {
   getSubmission,
   updateSubmission,
   deleteSubmission,
+  downloadSubmissionFile,
+  previewSubmissionFile,
 } = require("../controllers/Submission.controller");
 const { protect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const { canSubmitAssignment } = require("../middleware/accessControl");
-const multer = require("multer");
-const { handleUploadError } = require("../middleware/uploads");
-
-// Configure multer for file uploads
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
-  },
-});
+const { uploadSubmissionFiles, handleUploadError } = require("../middleware/uploads");
 
 // All routes protected
 router.use(protect);
@@ -30,7 +23,7 @@ router.post(
   "/:assignmentId/submit",
   authorize("student"),
   canSubmitAssignment,
-  upload.array("files", 5), // Max 5 files
+  uploadSubmissionFiles, // ✅ fixed: was multer.memoryStorage() — files now go to Cloudinary
   handleUploadError,
   submitAssignment,
 );
@@ -47,10 +40,16 @@ router.get("/:id", getSubmission);
 router.put(
   "/:id",
   authorize("student"),
-  upload.array("files", 5),
+  uploadSubmissionFiles,
   handleUploadError,
   updateSubmission,
 );
 router.delete("/:id", authorize("student"), deleteSubmission);
+
+// ── Download & Preview ─────────────────────────────────────────────────────────
+// fileIndex = 0-based index into submission.files[]
+// @access  Private — student (own submission) or instructor/admin
+router.get("/:submissionId/files/:fileIndex/download", downloadSubmissionFile);
+router.get("/:submissionId/files/:fileIndex/preview", previewSubmissionFile);
 
 module.exports = router;
