@@ -13,12 +13,10 @@ const { protect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const { uploadThumbnail, handleUploadError } = require("../middleware/uploads");
 
-// All routes protected
-router.use(protect);
-
 // Admin only routes
 router.post(
   "/",
+  protect,
   authorize("admin", "superAdmin"),
   uploadThumbnail,
   handleUploadError,
@@ -26,14 +24,15 @@ router.post(
 );
 router.put(
   "/:id",
+  protect,
   authorize("admin", "superAdmin"),
   uploadThumbnail,
   handleUploadError,
   updateCourse,
 );
-router.delete("/:id", authorize("admin", "superAdmin"), deleteCourse);
-router.put("/:id/publish", authorize("admin", "superAdmin"), togglePublish);
-router.get("/stats", authorize("admin", "superAdmin"), getCourseStats);
+router.delete("/:id", protect, authorize("admin", "superAdmin"), deleteCourse);
+router.put("/:id/publish", protect, authorize("admin", "superAdmin"), togglePublish);
+router.get("/stats", protect, authorize("admin", "superAdmin"), getCourseStats);
 
 // Public routes (with authentication)
 router.get("/", getCourses);
