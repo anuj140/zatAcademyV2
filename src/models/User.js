@@ -19,7 +19,10 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, "Please provide a password"],
+    required: function () {
+      // Password is required only if the user has completed setup
+      return this.isSetupComplete !== false;
+    },
     minlength: [8, "Password must be at least 8 characters"],
     select: false,
   },
@@ -37,8 +40,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     validate: {
       validator: function (v) {
-        // Only validate phone if user is a student
-        if (this.role === "student" && v) {
+        if (v) {
           return /^[6-9]\d{9}$/.test(v); // Indian phone number validation
         }
         return true;
@@ -54,9 +56,6 @@ const userSchema = new mongoose.Schema({
     type: Number,
     validate: {
       validator: function (v) {
-        // Only validate if provided
-        console.log("v in yearOfPassout: ", v);
-        console.log("this: ", this);
         if (v) {
           return v >= 2012 && v <= 2029;
         }
@@ -73,12 +72,40 @@ const userSchema = new mongoose.Schema({
         "Highest qualification must be one of: 12th, diploma, bachelor's degree, master's degree, phd",
     },
   },
-  passwordResetToken: String,
-  passwordResetExpires: Date,
+
+  // ── Instructor/Admin Account Setup ───────────────────────────────────────────
+  specialization: { type: String },
+  contract: { type: String },
+  isSetupComplete: { type: Boolean, default: true },
+  inviteToken: { type: String },
+  inviteTokenExpires: { type: Date },
+
+  // ── Email verification ───────────────────────────────────────────────────────
   emailVerified: {
     type: Boolean,
     default: false,
   },
+  emailOtp: { type: String, select: false },
+  emailOtpExpires: { type: Date, select: false },
+
+  // ── Phone verification ───────────────────────────────────────────────────────
+  phoneVerified: {
+    type: Boolean,
+    default: false,
+  },
+
+  // ── Pending email change ─────────────────────────────────────────────────────
+  pendingEmail: { type: String, select: false },
+  pendingEmailOtp: { type: String, select: false },
+  pendingEmailOtpExpires: { type: Date, select: false },
+
+  // ── Pending phone change ─────────────────────────────────────────────────────
+  pendingPhone: { type: String, select: false },
+
+  // ── Password reset ───────────────────────────────────────────────────────────
+  passwordResetToken: String,
+  passwordResetExpires: Date,
+
   createdAt: {
     type: Date,
     default: Date.now,
@@ -90,14 +117,13 @@ const userSchema = new mongoose.Schema({
 });
 
 // Encrypt password before saving
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return;
-
-  return (this.password = await bcrypt.hash(this.password, 12));
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return 
+  this.password = await bcrypt.hash(this.password, 12);
 });
 
 // Update timestamp on update
-userSchema.pre("findOneAndUpdate", async function (next) {
+userSchema.pre("findOneAndUpdate", async function () {
   this.set({ updatedAt: Date.now() });
 });
 
@@ -109,12 +135,41 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 // Generate password reset token
 userSchema.methods.createPasswordResetToken = function () {
   const resetToken = crypto.randomBytes(32).toString("hex");
-
   this.passwordResetToken = crypto.createHash("sha256").update(resetToken).digest("hex");
-
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-
   return resetToken;
+};
+
+// Generate account setup invite token
+userSchema.methods.createInviteToken = function () {
+  const token = crypto.randomBytes(32).toString("hex");
+  this.inviteToken = crypto.createHash("sha256").update(token).digest("hex");
+  this.inviteTokenExpires = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
+  return token;
+};
+
+/**
+ * Generate a 6-digit numeric OTP and return it.
+ * The hashed version is stored in `otpField` and the expiry in `expiresField`.
+ */
+userSchema.methods.generateOtp = function (otpField, expiresField) {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+  this[otpField] = crypto.createHash("sha256").update(otp).digest("hex");
+  this[expiresField] = Date.now() + 10 * 60 * 1000; // 10 minutes
+  return otp;
+};
+
+/**
+ * Verify a plain OTP against a stored hashed OTP field.
+ * Returns true if valid and not expired.
+ */
+userSchema.methods.verifyOtp = function (otp, otpField, expiresField) {
+  const hashed = crypto.createHash("sha256").update(otp).digest("hex");
+  return (
+    this[otpField] === hashed &&
+    this[expiresField] &&
+    this[expiresField] > Date.now()
+  );
 };
 
 module.exports = mongoose.model("User", userSchema);

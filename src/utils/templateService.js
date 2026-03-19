@@ -73,6 +73,38 @@ const DEFAULTS = {
 </div>`,
   },
 
+  email_otp: {
+    subject: 'Your ZatAcademy Verification Code',
+    htmlBody: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h2 style="color: #4F46E5;">Email Verification</h2>
+  <p>Hello {{userName}},</p>
+  <p>Please use the code below to {{purposeLabel}}:</p>
+  <div style="text-align: center; margin: 30px 0;">
+    <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4F46E5; background: #F0EFFF; padding: 16px 32px; border-radius: 8px; display: inline-block;">{{otp}}</span>
+  </div>
+  <p>This code is valid for <strong>{{expiryMinutes}} minutes</strong>. Do not share it with anyone.</p>
+  <p>If you did not request this, please ignore this email.</p>
+  <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
+  <p style="color: #666; font-size: 12px;">ZatAcademy Team</p>
+</div>`,
+  },
+
+  staff_invite: {
+    subject: 'You have been invited to join ZatAcademy as {{role}}',
+    htmlBody: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h2 style="color: #4F46E5;">Welcome to ZatAcademy!</h2>
+  <p>Hello {{userName}},</p>
+  <p>You have been invited to join ZatAcademy as an <strong>{{role}}</strong>.</p>
+  <p>Please click the button below to set up your account, verify your phone number, and choose your password.</p>
+  <a href="{{setupUrl}}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; margin: 20px 0;">
+    Set Up Your Account
+  </a>
+  <p>This link will expire in 7 days.</p>
+  <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
+  <p style="color: #666; font-size: 12px;">ZatAcademy Team</p>
+</div>`,
+  },
+
   assignment_graded: {
     subject: 'Assignment Graded: {{assignmentTitle}}',
     htmlBody: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

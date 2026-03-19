@@ -6,7 +6,7 @@ const { sendWelcomeEmail } = require('../utils/emailService');
 // @access  Private/Admin
 exports.createUser = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, role } = req.body;
     
     // Validate role
     if (!['student', 'instructor', 'admin'].includes(role)) {
@@ -25,24 +25,27 @@ exports.createUser = async (req, res) => {
       });
     }
     
-    // Create user
-    const user = await User.create({
+    // Create user without password (will be set during setup)
+    const user = new User({
       name,
       email,
-      password: password || generateRandomPassword(),
-      role
+      role,
+      isSetupComplete: false
     });
+
+    const inviteToken = user.createInviteToken();
+    await user.save({ validateBeforeSave: false }); // Skip password validation
     
-    // Send welcome email — fire-and-forget; user is already saved to DB.
-    // Email failure must NOT roll back the user creation or return a failure response.
+    // Send invite email
     let emailSent = true;
     let emailError = null;
     try {
-      await sendWelcomeEmail(user, password || 'Please use the password set by admin');
+      const { sendStaffInviteEmail } = require('../utils/emailService');
+      await sendStaffInviteEmail(user, inviteToken);
     } catch (err) {
       emailSent = false;
-      emailError = 'Welcome email could not be sent. Please share credentials with the user manually.';
-      console.error('[createUser] Failed to send welcome email:', err.message);
+      emailError = 'Invite email could not be sent. Please send the setup link to the user manually.';
+      console.error('[createUser] Failed to send invite email:', err.message);
     }
 
     res.status(201).json({
@@ -54,7 +57,8 @@ exports.createUser = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        isActive: user.isActive
+        isActive: user.isActive,
+        isSetupComplete: user.isSetupComplete
       }
     });
   } catch (error) {

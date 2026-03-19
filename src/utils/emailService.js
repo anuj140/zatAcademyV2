@@ -40,4 +40,38 @@ const sendWelcomeEmail = async (user, password = null) => {
   await sendEmail({ email: user.email, subject, html });
 };
 
-module.exports = { sendEmail, sendPasswordResetEmail, sendWelcomeEmail };
+/**
+ * Send an OTP email for email verification or email change.
+ * @param {object} user    - User document (needs .name, .email or provided email)
+ * @param {string} otp     - Plain OTP
+ * @param {string} toEmail - Destination email address
+ * @param {string} purpose - 'verify' | 'change' (controls the message copy)
+ */
+const sendEmailOtp = async (user, otp, toEmail, purpose = 'verify') => {
+  const purposeLabel = purpose === 'change'
+    ? 'confirm your new email address'
+    : 'verify your email address';
+
+  const { subject, html } = await renderTemplate('email_otp', {
+    userName: user.name,
+    otp,
+    purposeLabel,
+    expiryMinutes: 10,
+  });
+
+  await sendEmail({ email: toEmail, subject, html });
+};
+
+const sendStaffInviteEmail = async (user, inviteToken) => {
+  const setupUrl = `${process.env.FRONTEND_URL}/setup-account?token=${inviteToken}`;
+
+  const { subject, html } = await renderTemplate('staff_invite', {
+    userName: user.name,
+    role: user.role,
+    setupUrl,
+  });
+
+  await sendEmail({ email: user.email, subject, html });
+};
+
+module.exports = { sendEmail, sendPasswordResetEmail, sendWelcomeEmail, sendEmailOtp, sendStaffInviteEmail };
