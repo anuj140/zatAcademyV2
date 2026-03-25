@@ -37,4 +37,30 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+// Attaches req.user if a valid token is present, but never blocks the request.
+// Use on public routes that have role-dependent behaviour (e.g. GET /courses).
+const optionalProtect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization?.startsWith("Bearer")) {
+    token = req.headers.authorization.split(" ")[1];
+  }
+
+  if (!token) return next(); // unauthenticated — proceed as guest
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select("-password");
+
+    // Only attach the user if the account is actually active
+    if (user?.isActive) req.user = user;
+  } catch {
+    // Invalid / expired token — treat as guest, don't block
+  }
+
+  next();
+};
+
+module.exports = { protect, optionalProtect };
+
+

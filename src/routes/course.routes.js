@@ -9,7 +9,7 @@ const {
   togglePublish,
   getCourseStats,
 } = require("../controllers/course.controller");
-const { protect } = require("../middleware/auth");
+const { protect,optionalProtect } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const { uploadThumbnail, handleUploadError } = require("../middleware/uploads");
 
@@ -35,7 +35,7 @@ router.put("/:id/publish", protect, authorize("admin", "superAdmin"), togglePubl
 router.get("/stats", protect, authorize("admin", "superAdmin"), getCourseStats);
 
 // Public routes (with authentication)
-router.get("/", getCourses);
+router.get("/",optionalProtect, getCourses);
 router.get("/:id", getCourse);
 
 module.exports = router;

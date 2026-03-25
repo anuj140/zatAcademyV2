@@ -38,86 +38,89 @@ exports.createCourse = async (req, res) => {
 // @desc    Get all courses (with filtering and pagination)
 // @route   GET /api/v1/courses
 // @access  Public (published) / Private (all for admin)
+const ADMIN_ROLES = ["admin", "superAdmin"];
+
 exports.getCourses = async (req, res) => {
   try {
-    // Copy req.query
-    const reqQuery = { ...req.query };
+    const isAdmin = req.user && ADMIN_ROLES.includes(req.user.role);
 
-    // Fields to exclude
-    const removeFields = ["select", "sort", "page", "limit", "search"];
-    removeFields.forEach((param) => delete reqQuery[param]);
+    // ── 1. Base filter ────────────────────────────────────────────────────────
+    const filter = {};
 
+    // Non-admins (students + guests) can only ever see published courses
+    if (!isAdmin) {
+      //  - create new property with isPulished set to true
+      filter.isPublished = true;
+      // - if no value provide for isPublished
+    } else if (req.query.isPublished !== undefined) {
+      // Admins may explicitly filter: ?isPublished=false  or  ?isPublished=true
+      filter.isPublished = req.query.isPublished === "true";
+    }
+    // If admin sends no isPublished param → return ALL courses (both states)
+
+    // ── 2. Category filter (?category=web-development) ───────────────────────
+    if (req.query.category) {
+      filter.category = req.query.category;
+    }
+
+    // ── 3. Text search (?search=react) ───────────────────────────────────────
     let query;
-
-    // For students, only show published courses
-    if (req.user?.role === "student" || !req.user) {
-      reqQuery.isPublished = true;
-    }
-
-    // Search functionality
     if (req.query.search) {
-      query = Course.find({
-        $text: { $search: req.query.search },
-        ...reqQuery,
-      });
+      query = Course.find({ $text: { $search: req.query.search }, ...filter });
     } else {
-      query = Course.find(reqQuery);
+      query = Course.find(filter);
     }
 
-    // Select fields
+    // ── 4. Field selection (?select=title,fee,category) ──────────────────────
     if (req.query.select) {
       const fields = req.query.select.split(",").join(" ");
       query = query.select(fields);
     }
 
-    // Sort
+    // ── 5. Sorting (?sort=fee or ?sort=-createdAt or ?sort=fee,-createdAt) ────
+    const ALLOWED_SORT_FIELDS = isAdmin
+      ? ["fee", "-fee", "createdAt", "-createdAt", "title", "-title"]
+      : ["fee", "-fee", "createdAt", "-createdAt"]; // guests/students: safe subset
+    //6. If sort query provided
     if (req.query.sort) {
-      const sortBy = req.query.sort.split(",").join(" ");
-      query = query.sort(sortBy);
+      //6.1 Split the value by comma
+      const requested = req.query.sort.split(",");
+      //6.2 Only include fields predefined in allow_sort_fields
+      const safe = requested.filter((f) => ALLOWED_SORT_FIELDS.includes(f));
+      //6.3 If safe (arr) length is greater than zero then join the all value by space, otherwise sort createdAt(by descending order)
+      query = query.sort(safe.length ? safe.join(" ") : "-createdAt");
     } else {
+      //Else if sort query is not provided
+      //  - then sort createdAt by descending order
       query = query.sort("-createdAt");
     }
 
-    // Pagination
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const startIndex = (page - 1) * limit;
-    const endIndex = page * limit;
-    const total = await Course.countDocuments(query._conditions);
+    // ── 6. Pagination ─────────────────────────────────────────────────────────
+    //7. If page is provided - then whatever value provided otherwise 1 (if page value provided in negative then replace with positive 1)
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    //8. If limit is provided - then whatever value provided (but cap at 100), otherwise 10
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 100); // cap at 100
+    const skip = (page - 1) * limit;
 
-    query = query.skip(startIndex).limit(limit);
+    const total = await Course.countDocuments(filter);
+    query = query.skip(skip).limit(limit);
 
-    // Execute query
+    // ── 7. Execute ────────────────────────────────────────────────────────────
     const courses = await query;
 
-    // Pagination result
     const pagination = {};
-
-    if (endIndex < total) {
-      pagination.next = {
-        page: page + 1,
-        limit,
-      };
-    }
-
-    if (startIndex > 0) {
-      pagination.prev = {
-        page: page - 1,
-        limit,
-      };
-    }
+    if (skip + limit < total) pagination.next = { page: page + 1, limit };
+    if (skip > 0) pagination.prev = { page: page - 1, limit };
 
     res.status(200).json({
       success: true,
       count: courses.length,
+      total,
       pagination,
       data: courses,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
