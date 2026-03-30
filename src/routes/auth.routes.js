@@ -16,6 +16,8 @@ const {
   validateSetupToken,
   sendSetupOtp,
   completeSetup,
+  googleSignIn,
+  linkGoogle,
 } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth');
 
@@ -44,5 +46,11 @@ router.put('/update-password', protect, updatePassword);
 // OTP verification for email/phone change (auth required)
 router.post('/verify-email-change', protect, verifyEmailChange);
 router.post('/verify-phone-change', protect, verifyPhoneChange);
+
+// ── Google OAuth routes ────────────────────────────────────────────────────────
+// POST /api/v1/auth/google/signin  — verify Google ID token, return JWT (public)
+// POST /api/v1/auth/google/link    — link Google to existing account (protected)
+router.post('/google/signin', googleSignIn);
+router.post('/google/link', protect, linkGoogle);
 
 module.exports = router;

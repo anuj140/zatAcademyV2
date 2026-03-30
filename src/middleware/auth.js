@@ -115,7 +115,4 @@ const requirePhoneVerifiedForWrites = (req, res, next) => {
   next();
 };
 
-
-};
-
 module.exports = { protect, optionalProtect, requirePhoneVerifiedForWrites };

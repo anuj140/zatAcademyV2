@@ -20,12 +20,26 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: function () {
-      // Password is required only if the user has completed setup
+      // Password not required for Google-only users or users mid-invite-setup
+      if (this.authProvider === "google") return false;
       return this.isSetupComplete !== false;
     },
     minlength: [8, "Password must be at least 8 characters"],
     select: false,
   },
+  // ── Google OAuth ────────────────────────────────────────────────────────────
+  googleId: {
+    type: String,
+    sparse: true,   // allows multiple null values while still enforcing uniqueness
+    unique: true,
+    select: false,
+  },
+  authProvider: {
+    type: String,
+    enum: ["local", "google"],
+    default: "local",
+  },
+  picture: { type: String }, // Google profile photo URL
   role: {
     type: String,
     enum: ["student", "instructor", "admin", "superAdmin"],
