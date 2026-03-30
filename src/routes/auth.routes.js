@@ -7,6 +7,7 @@ const {
   resetPassword,
   getMe,
   updateDetails,
+  updateProfile,
   updatePassword,
   verifyEmailOtp,
   verifyPhoneOtp,
@@ -41,6 +42,8 @@ router.post('/setup/complete', completeSetup);
 // ── Protected routes ──────────────────────────────────────────────────────────
 router.get('/me', protect, getMe);
 router.put('/update-details', protect, updateDetails);
+// Update phone (with OTP) + education fields — whitelisted for phoneVerified:false users
+router.put('/update-profile', protect, updateProfile);
 router.put('/update-password', protect, updatePassword);
 
 // OTP verification for email/phone change (auth required)

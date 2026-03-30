@@ -182,3 +182,194 @@ exports.linkGoogle = async (req, res) => {
   }
 };
 ```
+
+
+```js
+const requirePhoneVerifiedForWrites = (req, res, next) => {
+  //1. List HTTP method (verbs) -- in array
+  const writeMethods = ["POST", "PUT", "PATCH", "DELETE"];
+
+  // Allow phone-setup endpoints through regardless of phoneVerified status
+  if (PHONE_SETUP_WHITELIST.some((path) => req.path === path || req.originalUrl.startsWith(path))) {
+    return next();
+  }
+
+  if (writeMethods.includes(req.method) && req.user && !req.user.phoneVerified) {
+    return res.status(403).json({
+      success: false,
+      message:
+        "Your account is in read-only mode. Please verify your phone number to perform this action.",
+      hint: "Add your phone via PUT /api/v1/auth/update-profile, then verify via POST /api/v1/auth/verify-phone-change.",
+      phoneVerified: false,
+    });
+  }
+
+  next();
+};
+```
+
+# updateProfile
+
+```js
+exports.updateProfile = async (req, res) => {
+  try {
+    //1. Extract name, phone, highest qualification, yearOfPassout from req.body
+    const { name, phone, highestQualification, yearOfPassout } = req.body;
+    //2. Find the login in user - retrive pendingPhone
+    const user = await User.findById(req.user.id).select(
+      "+pendingPhone"
+    );
+    //3. If there is no user found
+    //  - return status (not found) with message 'User not found'
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    //4. Create empty array to store message
+    const messages = [];
+
+    // ── Name (direct update) ────────────────────────────────────────────────
+    //4. If name provided and name is not equal to prev store name
+    // - then update name with message 'Name updated.'
+    if (name && name !== user.name) {
+      user.name = name;
+      messages.push("Name updated.");
+    }
+
+    // ── Highest qualification (direct update, validated) ────────────────────
+    //5. If highestQualification is provided
+    if (highestQualification !== undefined) {
+      //5.1 Store valid qualification
+      const validQualifications = [
+        "12th",
+        "diploma",
+        "bachelor's degree",
+        "master's degree",
+        "phd",
+      ];
+      //5.2 If provided value for hightestQaulifcation is not valid - by checking against [valid qualification]
+      // - return bad request status with message "Hight qualifcation must be one of .... these value"
+      if (!validQualifications.includes(highestQualification)) {
+        return res.status(400).json({
+          success: false,
+          message: `Highest qualification must be one of: ${validQualifications.join(", ")}`,
+        });
+      }
+      //5.3 If value valid the store value in users highestQualification and push message 'Highest qualification updated'
+      user.highestQualification = highestQualification;
+      messages.push("Highest qualification updated.");
+    }
+
+    // ── Year of passout (direct update, validated) ──────────────────────────
+    if (yearOfPassout !== undefined) {
+      const year = Number(yearOfPassout);
+      if (isNaN(year) || year < 2012 || year > 2029) {
+        return res.status(400).json({
+          success: false,
+          message: "Year of passout must be between 2012 and 2029",
+        });
+      }
+      user.yearOfPassout = year;
+      messages.push("Year of passout updated.");
+    }
+
+    // ── Phone: first-time add or change (requires OTP verification) ─────────
+    if (phone && phone !== user.phone) {
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid 10-digit Indian phone number (starting with 6-9)",
+        });
+      }
+
+      // Uniqueness check — ignore the current user's own number
+      const existing = await User.findOne({ phone, _id: { $ne: user._id } });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number is already in use by another account",
+        });
+      }
+
+      user.pendingPhone = phone;
+
+      try {
+        await sendSmsOtp(toE164(phone));
+        messages.push(
+          `OTP sent to +91${phone}. Please verify via POST /api/v1/auth/verify-phone-change.`
+        );
+      } catch (err) {
+        console.error("[updateProfile] Failed to send phone OTP:", err.message);
+        messages.push(
+          `Phone saved as pending, but OTP could not be sent. Please retry via POST /api/v1/auth/resend-otp.`
+        );
+      }
+    }
+
+    await user.save({ validateBeforeSave: false });
+
+    const responseMessage =
+      messages.length > 0 ? messages.join(" ") : "No changes were made.";
+
+    return res.status(200).json({
+      success: true,
+      message: responseMessage,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || null,
+        highestQualification: user.highestQualification || null,
+        yearOfPassout: user.yearOfPassout || null,
+        phoneVerified: user.phoneVerified,
+        pendingPhone: phone && phone !== user.phone ? phone : undefined,
+      },
+    });
+  } catch (error) {
+    console.error("[updateProfile] Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```
+
+# verifyPhoneChange
+
+```js
+exports.verifyPhoneChange = async (req, res) => {
+  try {
+    //1. Extract otp from req.body
+    const { otp } = req.body;
+    //2. If there is no otp
+    //  - return status bad request with message 'OTP is required'
+    if (!otp) {
+      return res.status(400).json({ success: false, message: "OTP is required" });
+    }
+    //3. Find the login user with their pendingPhone field (value)
+    const user = await User.findById(req.user.id).select(
+      "+pendingPhone"
+    );
+    //4. If user not found or there is pending phone number
+    // - return bad request with message 'No pending phone change found'
+    if (!user || !user.pendingPhone) {
+      return res.status(400).json({ success: false, message: "No pending phone change found. Please request a change first." });
+    }
+
+    const isValid = await verifySmsOtp(toE164(user.pendingPhone), otp);
+    if (!isValid) {
+      return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+    }
+
+    user.phone = user.pendingPhone;
+    user.phoneVerified = true;
+    user.pendingPhone = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    res.status(200).json({
+      success: true,
+      message: "Mobile number updated and verified successfully",
+      user: { id: user._id, name: user.name, phone: user.phone },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```

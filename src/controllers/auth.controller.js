@@ -768,6 +768,133 @@ exports.verifyPhoneChange = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// @desc    Update profile — phone (with OTP), qualification & year of passout
+//          Designed for Google Sign-In users who land without these fields,
+//          but works for ALL authenticated users.
+//
+//          Phone changes go through OTP verification:
+//            1. Call PUT /api/v1/auth/update-profile  { phone }
+//               → stores in pendingPhone, sends SMS OTP
+//            2. Call POST /api/v1/auth/verify-phone-change  { otp }
+//               → verifies OTP, moves pendingPhone → phone, phoneVerified = true
+//
+//          Education fields (highestQualification, yearOfPassout) are saved
+//          immediately — no OTP required.
+//
+// @route   PUT /api/v1/auth/update-profile
+// @access  Private  (whitelisted even for phoneVerified: false users)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, phone, highestQualification, yearOfPassout } = req.body;
+
+    const user = await User.findById(req.user.id).select(
+      "+pendingPhone"
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const messages = [];
+
+    // ── Name (direct update) ────────────────────────────────────────────────
+    if (name && name !== user.name) {
+      user.name = name;
+      messages.push("Name updated.");
+    }
+
+    // ── Highest qualification (direct update, validated) ────────────────────
+    if (highestQualification !== undefined) {
+      const validQualifications = [
+        "12th",
+        "diploma",
+        "bachelor's degree",
+        "master's degree",
+        "phd",
+      ];
+      if (!validQualifications.includes(highestQualification)) {
+        return res.status(400).json({
+          success: false,
+          message: `Highest qualification must be one of: ${validQualifications.join(", ")}`,
+        });
+      }
+      user.highestQualification = highestQualification;
+      messages.push("Highest qualification updated.");
+    }
+
+    // ── Year of passout (direct update, validated) ──────────────────────────
+    if (yearOfPassout !== undefined) {
+      const year = Number(yearOfPassout);
+      if (isNaN(year) || year < 2012 || year > 2029) {
+        return res.status(400).json({
+          success: false,
+          message: "Year of passout must be between 2012 and 2029",
+        });
+      }
+      user.yearOfPassout = year;
+      messages.push("Year of passout updated.");
+    }
+
+    // ── Phone: first-time add or change (requires OTP verification) ─────────
+    if (phone && phone !== user.phone) {
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid 10-digit Indian phone number (starting with 6-9)",
+        });
+      }
+
+      // Uniqueness check — ignore the current user's own number
+      const existing = await User.findOne({ phone, _id: { $ne: user._id } });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number is already in use by another account",
+        });
+      }
+
+      user.pendingPhone = phone;
+
+      try {
+        await sendSmsOtp(toE164(phone));
+        messages.push(
+          `OTP sent to +91${phone}. Please verify via POST /api/v1/auth/verify-phone-change.`
+        );
+      } catch (err) {
+        console.error("[updateProfile] Failed to send phone OTP:", err.message);
+        messages.push(
+          `Phone saved as pending, but OTP could not be sent. Please retry via POST /api/v1/auth/resend-otp.`
+        );
+      }
+    }
+
+    await user.save({ validateBeforeSave: false });
+
+    const responseMessage =
+      messages.length > 0 ? messages.join(" ") : "No changes were made.";
+
+    return res.status(200).json({
+      success: true,
+      message: responseMessage,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || null,
+        highestQualification: user.highestQualification || null,
+        yearOfPassout: user.yearOfPassout || null,
+        phoneVerified: user.phoneVerified,
+        pendingPhone: phone && phone !== user.phone ? phone : undefined,
+      },
+    });
+  } catch (error) {
+    console.error("[updateProfile] Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // @desc    Change password (requires current password)
 // @route   PUT /api/v1/auth/update-password
 // @access  Private

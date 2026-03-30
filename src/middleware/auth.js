@@ -91,23 +91,40 @@ const optionalProtect = async (req, res, next) => {
 };
 
 /**
+ * Paths that Google users (phoneVerified: false) are allowed to call
+ * even while in read-only mode. These are the two endpoints required to
+ * add and verify a phone number for the first time.
+ */
+const PHONE_SETUP_WHITELIST = [
+  "/api/v1/auth/update-profile",
+  "/api/v1/auth/verify-phone-change",
+];
+
+/**
  * requirePhoneVerifiedForWrites – blocks write operations (POST, PUT, PATCH, DELETE)
  * for authenticated users who have NOT yet verified their phone number.
  *
  * Google Sign-In users land here without a phone — they can read (GET) freely,
  * but any mutation is blocked until they add and verify a phone via:
- *   PUT  /api/v1/auth/update-details      → sends OTP
+ *   PUT  /api/v1/auth/update-profile      → sends OTP & saves qualification fields
  *   POST /api/v1/auth/verify-phone-change → confirms OTP & sets phoneVerified = true
+ *
+ * The two endpoints above are whitelisted so the flow is never deadlocked.
  */
 const requirePhoneVerifiedForWrites = (req, res, next) => {
   const writeMethods = ["POST", "PUT", "PATCH", "DELETE"];
+
+  // Allow phone-setup endpoints through regardless of phoneVerified status
+  if (PHONE_SETUP_WHITELIST.some((path) => req.path === path || req.originalUrl.startsWith(path))) {
+    return next();
+  }
 
   if (writeMethods.includes(req.method) && req.user && !req.user.phoneVerified) {
     return res.status(403).json({
       success: false,
       message:
         "Your account is in read-only mode. Please verify your phone number to perform this action.",
-      hint: "Add your phone via PUT /api/v1/auth/update-details, then verify via POST /api/v1/auth/verify-phone-change.",
+      hint: "Add your phone via PUT /api/v1/auth/update-profile, then verify via POST /api/v1/auth/verify-phone-change.",
       phoneVerified: false,
     });
   }
