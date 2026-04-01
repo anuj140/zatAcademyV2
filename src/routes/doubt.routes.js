@@ -11,12 +11,14 @@ const {
   getInstructorDoubts,
   pinDoubt,
 } = require("../controllers/doubt.controller");
-const { protect } = require("../middleware/auth");
+const { protect, requirePhoneVerifiedForWrites } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const { uploadDoubtAttachments, handleUploadError } = require("../middleware/uploads");
 
 // All routes protected
 router.use(protect);
+// Block unverified-phone users from all writes (create doubt, reply, vote, follow)
+router.use(requirePhoneVerifiedForWrites);
 
 // Student routes
 router.post(

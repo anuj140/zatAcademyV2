@@ -9,12 +9,14 @@ const {
   getProgressTrend,
   getInstructorProgressOverview,
 } = require("../controllers/progress.controller");
-const { protect } = require("../middleware/auth");
+const { protect, requirePhoneVerifiedForWrites } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const { cacheResponse } = require("../middleware/cache");
 
 // All routes protected
 router.use(protect);
+// Block unverified-phone users from writes (mark material progress, calculate batch progress)
+router.use(requirePhoneVerifiedForWrites);
 
 // Student routes
 router.get(

@@ -8,11 +8,13 @@ const {
   updateProfile,
   deleteProfile,
 } = require("../controllers/studentProfile.controller");
-const { protect } = require("../middleware/auth");
+const { protect, requirePhoneVerifiedForWrites } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 
 // All routes protected
 router.use(protect);
+// Block unverified-phone users from all writes (submit & update profile)
+router.use(requirePhoneVerifiedForWrites);
 
 // Student routes
 // Check if profile exists (before enrollment)

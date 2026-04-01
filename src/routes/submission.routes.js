@@ -10,13 +10,15 @@ const {
   downloadSubmissionFile,
   previewSubmissionFile,
 } = require("../controllers/Submission.controller");
-const { protect } = require("../middleware/auth");
+const { protect, requirePhoneVerifiedForWrites } = require("../middleware/auth");
 const { authorize } = require("../middleware/role");
 const { canSubmitAssignment } = require("../middleware/accessControl");
 const { uploadSubmissionFiles, handleUploadError } = require("../middleware/uploads");
 
 // All routes protected
 router.use(protect);
+// Block unverified-phone users from all writes (submit, update, delete assignment)
+router.use(requirePhoneVerifiedForWrites);
 
 // Student submissions
 router.post(

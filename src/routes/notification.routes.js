@@ -7,12 +7,14 @@ const {
   deleteNotification,
 } = require("../controllers/notification.controller");
 
-const { protect } = require("../middleware/auth");
+const { protect, requirePhoneVerifiedForWrites } = require("../middleware/auth");
 
 const router = express.Router();
 
 // All notification routes require authentication
 router.use(protect);
+// Block unverified-phone users from writes (mark read, delete)
+router.use(requirePhoneVerifiedForWrites);
 
 router.route("/").get(getMyNotifications);
 
