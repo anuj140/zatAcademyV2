@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 // const helmet = require('helmet');
 // const rateLimit = require('express-rate-limit');
 // const mongoSanitize = require('express-mongo-sanitize');
@@ -43,9 +44,10 @@ connectDB();
 // });
 // app.use("/api", limiter);
 
-// Body parser
+// Body & Cookie parsers
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cookieParser());
 
 // Data sanitization against NoSQL query injection
 // app.use(mongoSanitize());

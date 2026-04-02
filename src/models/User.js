@@ -116,6 +116,10 @@ const userSchema = new mongoose.Schema({
   // ── Pending phone change ─────────────────────────────────────────────────────
   pendingPhone: { type: String, select: false },
 
+  // ── Refresh token (access-token / refresh-token auth) ─────────────────────────
+  refreshToken: { type: String, select: false },
+  refreshTokenExpires: { type: Date, select: false },
+
   // ── Password reset ───────────────────────────────────────────────────────────
   passwordResetToken: String,
   passwordResetExpires: Date,
@@ -144,6 +148,14 @@ userSchema.pre("findOneAndUpdate", async function () {
 // Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Generate a secure opaque refresh token (plain returned, SHA-256 hash stored)
+userSchema.methods.createRefreshToken = function () {
+  const rawToken = require("crypto").randomBytes(40).toString("hex");
+  this.refreshToken = require("crypto").createHash("sha256").update(rawToken).digest("hex");
+  this.refreshTokenExpires = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+  return rawToken;
 };
 
 // Generate password reset token

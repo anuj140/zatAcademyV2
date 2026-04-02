@@ -19,6 +19,8 @@ const {
   completeSetup,
   googleSignIn,
   linkGoogle,
+  refreshAccessToken,
+  logout,
 } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth');
 
@@ -55,5 +57,9 @@ router.post('/verify-phone-change', protect, verifyPhoneChange);
 // POST /api/v1/auth/google/link    — link Google to existing account (protected)
 router.post('/google/signin', googleSignIn);
 router.post('/google/link', protect, linkGoogle);
+
+// ── Token management ──────────────────────────────────────────────────────────────────
+router.post('/refresh-token', refreshAccessToken);  // public — uses refresh token as credential
+router.post('/logout', protect, logout);             // protected — revokes refresh token
 
 module.exports = router;

@@ -373,3 +373,174 @@ exports.verifyPhoneChange = async (req, res) => {
   }
 };
 ```
+
+```js
+const verifyGoogleToken = async (idToken) => {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID,
+  });
+  return ticket.getPayload(); // { sub, email, name, picture, email_verified, ... }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Sign in / register with Google
+// @route   POST /api/v1/auth/google/signin
+// @access  Public
+// ─────────────────────────────────────────────────────────────────────────────
+exports.googleSignIn = async (req, res) => {
+  try {
+    //1. Extract idToken from req.boy
+    const { idToken } = req.body;
+    //2. If there is no token provided
+    //  - return bad request status with message "Google Id token is required"
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: "Google ID token is required" });
+    }
+    //3. Initialize the payload variable
+    let payload;
+    try {
+      //3.1 If returns from verifyGoogleToken into payload 
+      payload = await verifyGoogleToken(idToken);
+    } catch (err) {
+      //3.2 If there any error occur while verifyingGoogleToken return unauthorized status
+      return res.status(401).json({ success: false, message: "Invalid or expired Google token" });
+    }
+    //4. Extract googleId, email, name, picture from payload
+    const { sub: googleId, email, name, picture } = payload;
+
+    // ── Look up by email ───────────────────────────────────────────────────
+    //5. Find existing user with exact email and retrive googlId
+    let user = await User.findOne({ email: email.toLowerCase() }).select("+googleId");
+    //6. If user found
+    if (user) {
+      // Existing user with same email but there is no googleId
+      if (!user.googleId) {
+        // Local account — prompt the frontend to link accounts
+        return res.status(409).json({
+          success: false,
+          needsLinking: true,
+          message:
+            "An account with this email already exists. Please log in with your password first, then link your Google account via POST /api/v1/auth/google/link.",
+        });
+      }
+
+      // Google-linked account — update googleId if somehow missing (edge case)
+      if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save({ validateBeforeSave: false });
+      }
+
+      if (!user.isActive) {
+        return res.status(401).json({ success: false, message: "Account is inactive" });
+      }
+
+      const accessToken = generateAccessToken(user._id, user.role);
+      const refreshToken = user.createRefreshToken();
+      await user.save({ validateBeforeSave: false });
+
+      return res.status(200).json({
+        success: true,
+        message: "Signed in with Google successfully",
+        accessToken,
+        refreshToken,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          authProvider: user.authProvider,
+          emailVerified: user.emailVerified,
+          phoneVerified: user.phoneVerified,
+          picture: user.picture,
+        },
+      });
+    }
+
+    // ── New user — create with Google provider ─────────────────────────────
+    user = await User.create({
+      name,
+      email: email.toLowerCase(),
+      googleId,
+      authProvider: "google",
+      picture,
+      emailVerified: true,   // Google already verified the email
+      phoneVerified: false,  // phone must be added & verified separately
+      role: "student",
+    });
+
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = user.createRefreshToken();
+    await user.save({ validateBeforeSave: false });
+
+    return res.status(201).json({
+      success: true,
+      message: "Account created with Google. You're in read-only mode until you verify your phone number.",
+      accessToken,
+      refreshToken,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        authProvider: user.authProvider,
+        emailVerified: user.emailVerified,
+        phoneVerified: user.phoneVerified,
+        picture: user.picture,
+      },
+    });
+  } catch (error) {
+    console.error("[googleSignIn] Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```
+
+```js
+exports.refreshAccessToken = async (req, res) => {
+  try {
+    //1. Extract refreshToken from req.body
+    const { refreshToken } = req.body;
+    //2. If there is no refreshToken
+    //  - return bad-request status with message 'Refresh token is required'
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, message: "Refresh token is required" });
+    }
+
+    // Hash the incoming token to compare with the stored hash
+    //3. Hash the incoming refreshToken
+    const hashed = crypto.createHash("sha256").update(refreshToken).digest("hex");
+
+    //4. Find the user with hased refreshToken and refreshToken expiry is greater than today
+    // - retrive refreshToken and refreshTokenExpires
+    const user = await User.findOne({
+      refreshToken: hashed,
+      refreshTokenExpires: { $gt: Date.now() },
+    }).select("+refreshToken +refreshTokenExpires");
+
+    //5. If there is no user or user is inActive
+    // - return unauthorize status with message 'Invalid or expired refresh token'
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token. Please log in again.",
+      });
+    }
+
+    // ── Rotate: invalidate the old refresh token and issue a fresh pair ──────────
+    //6. Generate new access token by passing userId and user role
+    const newAccessToken = generateAccessToken(user._id, user.role);
+    const newRefreshToken = user.createRefreshToken(); // overwrites hash + expiry
+    await user.save({ validateBeforeSave: false });
+
+    return res.status(200).json({
+      success: true,
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (error) {
+    console.error("[refreshAccessToken] Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```

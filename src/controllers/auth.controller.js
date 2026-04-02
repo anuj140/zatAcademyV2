@@ -2,11 +2,24 @@ const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User");
 const Course = require("../models/Course");
-const { generateToken } = require("../utils/tokenService");
+const { generateAccessToken } = require("../utils/tokenService");
 const { sendPasswordResetEmail, sendWelcomeEmail, sendEmailOtp } = require("../utils/emailService");
 const { sendSmsOtp, verifySmsOtp } = require("../utils/smsService");
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: set refresh token in httpOnly cookie
+// ─────────────────────────────────────────────────────────────────────────────
+const setTokenCookie = (res, token) => {
+  const cookieOptions = {
+    httpOnly: process.env.REFRESH_TOKEN_COOKIE_HTTPONLY !== "false", // default true
+    secure: process.env.REFRESH_TOKEN_COOKIE_SECURE === "true" || process.env.NODE_ENV === "production",
+    sameSite: process.env.REFRESH_TOKEN_COOKIE_SAMESITE || "strict",
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  };
+  res.cookie(process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken", token, cookieOptions);
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: verify a Google ID token and return its payload
@@ -54,22 +67,23 @@ exports.googleSignIn = async (req, res) => {
             "An account with this email already exists. Please log in with your password first, then link your Google account via POST /api/v1/auth/google/link.",
         });
       }
-
-      // Google-linked account — update googleId if somehow missing (edge case)
-      if (!user.googleId) {
-        user.googleId = googleId;
-        await user.save({ validateBeforeSave: false });
-      }
-
+      // If user is inactive 
+      // - return unauthorized status with message "Acccount is inactive"
       if (!user.isActive) {
         return res.status(401).json({ success: false, message: "Account is inactive" });
       }
+      //5. Generate access token by passing userId and user role
+      const accessToken = generateAccessToken(user._id, user.role);
+      //
+      const refreshToken = user.createRefreshToken();
+      await user.save({ validateBeforeSave: false });
 
-      const token = generateToken(user._id, user.role);
+      setTokenCookie(res, refreshToken);
+
       return res.status(200).json({
         success: true,
         message: "Signed in with Google successfully",
-        token,
+        accessToken,
         user: {
           id: user._id,
           name: user.name,
@@ -95,11 +109,16 @@ exports.googleSignIn = async (req, res) => {
       role: "student",
     });
 
-    const token = generateToken(user._id, user.role);
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = user.createRefreshToken();
+    await user.save({ validateBeforeSave: false });
+
+    setTokenCookie(res, refreshToken);
+
     return res.status(201).json({
       success: true,
       message: "Account created with Google. You're in read-only mode until you verify your phone number.",
-      token,
+      accessToken,
       user: {
         id: user._id,
         name: user.name,
@@ -478,17 +497,22 @@ exports.login = async (req, res) => {
     if (!user.emailVerified || !user.phoneVerified) {
       return res.status(403).json({
         success: false,
+        errorCode: "ACCOUNT_NOT_VERIFIED",
         message: "Please verify your email and mobile number before logging in.",
         emailVerified: user.emailVerified,
         phoneVerified: user.phoneVerified,
       });
     }
 
-    const token = generateToken(user._id, user.role);
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = user.createRefreshToken();
+    await user.save({ validateBeforeSave: false });
+
+    setTokenCookie(res, refreshToken);
 
     res.status(200).json({
       success: true,
-      token,
+      accessToken,
       user: {
         id: user._id,
         name: user.name,
@@ -569,11 +593,15 @@ exports.resetPassword = async (req, res) => {
     user.passwordResetExpires = undefined;
     await user.save();
 
-    const token = generateToken(user._id, user.role);
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = user.createRefreshToken();
+    await user.save({ validateBeforeSave: false });
+
+    setTokenCookie(res, refreshToken);
 
     res.status(200).json({
       success: true,
-      token,
+      accessToken,
       user: { id: user._id, name: user.name, email: user.email, role: user.role },
     });
   } catch (error) {
@@ -720,7 +748,7 @@ exports.verifyEmailChange = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Email updated and verified successfully",
-      user: { id: user._id, name: user.name, email: user.email },
+      user: { id: user._id, name: user.name, email: user.email, emailVerified: user.emailVerified },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -760,7 +788,7 @@ exports.verifyPhoneChange = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Mobile number updated and verified successfully",
-      user: { id: user._id, name: user.name, phone: user.phone },
+      user: { id: user._id, name: user.name, phone: user.phone, phoneVerified: user.phoneVerified },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -938,9 +966,13 @@ exports.updatePassword = async (req, res) => {
     user.password = newPassword;
     await user.save();
 
-    const token = generateToken(user._id, user.role);
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = user.createRefreshToken();
+    await user.save({ validateBeforeSave: false });
 
-    res.status(200).json({ success: true, message: "Password changed successfully", token });
+    setTokenCookie(res, refreshToken);
+
+    res.status(200).json({ success: true, message: "Password changed successfully", accessToken });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -1084,12 +1116,16 @@ exports.completeSetup = async (req, res) => {
 
     await user.save();
 
-    const jwtToken = generateToken(user._id, user.role);
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = user.createRefreshToken();
+    await user.save({ validateBeforeSave: false });
+
+    setTokenCookie(res, refreshToken);
 
     res.status(200).json({
       success: true,
       message: "Account setup complete. You are now logged in.",
-      token: jwtToken,
+      accessToken,
       user: {
         id: user._id,
         name: user.name,
@@ -1100,6 +1136,80 @@ exports.completeSetup = async (req, res) => {
     });
 
   } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Refresh the access token using a valid refresh token
+// @route   POST /api/v1/auth/refresh-token
+// @access  Public
+// ─────────────────────────────────────────────────────────────────────────────
+exports.refreshAccessToken = async (req, res) => {
+  try {
+    const refreshToken = req.cookies[process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken"];
+
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, message: "Refresh token is missing" });
+    }
+
+    // Hash the incoming token to compare with the stored hash
+    const hashed = crypto.createHash("sha256").update(refreshToken).digest("hex");
+
+    const user = await User.findOne({
+      refreshToken: hashed,
+      refreshTokenExpires: { $gt: Date.now() },
+    }).select("+refreshToken +refreshTokenExpires");
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token. Please log in again.",
+      });
+    }
+
+    // ── Rotate: invalidate the old refresh token and issue a fresh pair ──────────
+    const newAccessToken = generateAccessToken(user._id, user.role);
+    const newRefreshToken = user.createRefreshToken(); // overwrites hash + expiry
+    await user.save({ validateBeforeSave: false });
+
+    setTokenCookie(res, newRefreshToken);
+
+    return res.status(200).json({
+      success: true,
+      accessToken: newAccessToken,
+    });
+  } catch (error) {
+    console.error("[refreshAccessToken] Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc    Logout — invalidate the stored refresh token
+// @route   POST /api/v1/auth/logout
+// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+exports.logout = async (req, res) => {
+  try {
+    // Revoke the stored refresh token so the client can no longer rotate
+    const user = await User.findById(req.user.id).select("+refreshToken +refreshTokenExpires");
+    if (user) {
+      user.refreshToken = undefined;
+      user.refreshTokenExpires = undefined;
+      await user.save({ validateBeforeSave: false });
+    }
+
+    // Destroy express-session for web (Google) users
+    if (req.session) {
+      req.session.destroy(() => {});
+    }
+
+    res.clearCookie(process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken");
+
+    res.status(200).json({ success: true, message: "Logged out successfully" });
+  } catch (error) {
+    console.error("[logout] Error:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };

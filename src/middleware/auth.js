@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { verifyAccessToken } = require("../utils/tokenService");
 const User = require("../models/User");
 
 /**
@@ -35,7 +36,7 @@ const protect = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyAccessToken(token);
     req.user = await User.findById(decoded.id).select("-password");
 
     if (!req.user || !req.user.isActive) {
@@ -80,7 +81,7 @@ const optionalProtect = async (req, res, next) => {
   if (!token) return next();
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyAccessToken(token);
     const user = await User.findById(decoded.id).select("-password");
     if (user?.isActive) req.user = user;
   } catch {
@@ -122,6 +123,7 @@ const requirePhoneVerifiedForWrites = (req, res, next) => {
   if (writeMethods.includes(req.method) && req.user && !req.user.phoneVerified) {
     return res.status(403).json({
       success: false,
+      errorCode: "PHONE_NOT_VERIFIED",
       message:
         "Your account is in read-only mode. Please verify your phone number to perform this action.",
       hint: "Add your phone via PUT /api/v1/auth/update-profile, then verify via POST /api/v1/auth/verify-phone-change.",
