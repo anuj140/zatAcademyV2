@@ -56,7 +56,23 @@ app.use(cookieParser());
 // app.use(xss());
 
 // Enable CORS
-app.use(cors());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, '')); // strip trailing slashes
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow server-to-server / Postman requests (no Origin header)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error(`CORS: origin '${origin}' is not allowed`));
+    },
+    credentials: true, // required so the browser sends the refreshToken cookie
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
 // Mount routers
 app.use("/api/v1/auth", authRoutes);
