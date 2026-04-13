@@ -35,9 +35,16 @@ const batchSchema = new mongoose.Schema({
     required: [true, "Please provide batch start date"],
     validate: {
       validator: function (value) {
-        return value > new Date();
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0); // strip time — compare date-only
+
+        // Normalize the incoming value to UTC midnight as well
+        const normalized = new Date(value);
+        normalized.setUTCHours(0, 0, 0, 0);
+
+        return normalized >= today;
       },
-      message: "Start date must be in the future",
+      message: "Start date must be today or in the future",
     },
   },
   endDate: {

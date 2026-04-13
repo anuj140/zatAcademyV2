@@ -12,10 +12,15 @@ const userSocketMap = new Map();
  * Call this once from server.js after creating the HTTP server.
  */
 const initSocket = (httpServer) => {
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''));
+
   io = new Server(httpServer, {
     cors: {
-      origin: "*", // Tighten this in production
+      origin: allowedOrigins.length ? allowedOrigins : '*',
       methods: ["GET", "POST"],
+      credentials: true,
     },
   });
 
@@ -55,8 +60,20 @@ const initSocket = (httpServer) => {
         socket.emit("authenticated", { message: "Socket authenticated", userId: uid });
         console.log(`✅ Socket authenticated: user=${uid}, socketId=${socket.id}`);
       } catch (err) {
-        console.error("Socket auth error:", err.message);
-        socket.emit("auth_error", { message: "Invalid or expired token" });
+        console.error("❌ Token verification failed:", err.message);
+
+        // Tell the client WHY it failed so it can act accordingly
+        if (err.name === "TokenExpiredError") {
+          socket.emit("auth_error", {
+            code: "TOKEN_EXPIRED",
+            message: "Access token has expired. Please refresh your token and re-authenticate.",
+          });
+        } else {
+          socket.emit("auth_error", {
+            code: "TOKEN_INVALID",
+            message: "Invalid token. Please log in again.",
+          });
+        }
       }
     });
 

@@ -49,8 +49,19 @@ const protect = async (req, res, next) => {
     next();
   } catch (error) {
     console.log("❌ Token verification failed:", error.message);
+
+    // Distinguish expired tokens so the frontend can silently refresh
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        errorCode: "TOKEN_EXPIRED",
+        message: "Access token has expired. Please refresh your token.",
+      });
+    }
+
     return res.status(401).json({
       success: false,
+      errorCode: "TOKEN_INVALID",
       message: "Not authorized to access this route",
     });
   }
