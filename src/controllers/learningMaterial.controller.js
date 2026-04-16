@@ -508,7 +508,9 @@ exports.downloadMaterial = async (req, res) => {
     const material = await LearningMaterial.findById(req.params.id);
 
     if (!material) {
-      return res.status(404).json({ success: false, message: 'Learning material not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Learning material not found" });
     }
 
     // Must have a stored file to download
@@ -518,7 +520,7 @@ exports.downloadMaterial = async (req, res) => {
         return res.status(200).json({
           success: true,
           data: {
-            type: 'redirect',
+            type: "redirect",
             url: material.externalUrl,
             externalProvider: material.externalProvider,
           },
@@ -526,7 +528,7 @@ exports.downloadMaterial = async (req, res) => {
       }
       return res.status(400).json({
         success: false,
-        message: 'This material has no downloadable file attached',
+        message: "This material has no downloadable file attached",
       });
     }
 
@@ -550,7 +552,9 @@ exports.previewMaterial = async (req, res) => {
     const material = await LearningMaterial.findById(req.params.id);
 
     if (!material) {
-      return res.status(404).json({ success: false, message: 'Learning material not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Learning material not found" });
     }
 
     // External URL (YouTube, Vimeo, GitHub) — client embeds/opens directly
@@ -558,9 +562,9 @@ exports.previewMaterial = async (req, res) => {
       return res.status(200).json({
         success: true,
         data: {
-          type: 'external',
+          type: "external",
           url: material.externalUrl,
-          provider: material.externalProvider || 'external',
+          provider: material.externalProvider || "external",
           materialType: material.materialType,
           title: material.title,
         },
@@ -570,7 +574,7 @@ exports.previewMaterial = async (req, res) => {
     if (!material.file || !material.file.url) {
       return res.status(400).json({
         success: false,
-        message: 'This material has no file to preview',
+        message: "This material has no file to preview",
       });
     }
 
