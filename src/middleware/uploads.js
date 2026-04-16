@@ -13,27 +13,13 @@ const storage = new CloudinaryStorage({
   },
 });
 
-// Configure Cloudinary storage for session materials
+// Configure Cloudinary storage for session materials (accepts any file format)
 const sessionMaterialsStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder:
       process.env.CLOUDINARY_SESSION_MATERIALS_FOLDER || "alma-better/session-materials",
-    allowed_formats: [
-      "pdf",
-      "doc",
-      "docx",
-      "ppt",
-      "pptx",
-      "txt",
-      "jpg",
-      "jpeg",
-      "png",
-      "mp4",
-      "mov",
-    ],
-    resource_type: "auto",
-    transformation: [{ width: 800, crop: "limit" }],
+    resource_type: "auto", // Automatically detect based on file type
   },
 });
 
@@ -50,31 +36,48 @@ const sessionRecordingsStorage = new CloudinaryStorage({
   },
 });
 
-// File filter for session materials
+// File filter for session materials (supports comprehensive file types)
 const sessionMaterialsFilter = (req, file, cb) => {
   const allowedMimes = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "text/plain",
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/gif",
-    "video/mp4",
-    "video/quicktime",
-    "video/x-msvideo",
-    "video/webm",
+    // Documents
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain',
+    'text/csv',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/zip',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
+    // Images
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/svg+xml',
+    // Video
+    'video/mp4',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/webm',
+    'video/x-matroska',
+    // Audio
+    'audio/mpeg',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    // MIME types for unknown extensions - accept all
   ];
 
-  if (allowedMimes.includes(file.mimetype)) {
+  // Accept if in allowed list or if we want to accept any file
+  if (allowedMimes.includes(file.mimetype) || process.env.ALLOW_ALL_FILE_TYPES === 'true') {
     cb(null, true);
   } else {
-    req.fileValidationError =
-      "Invalid file type. Allowed types: PDF, DOC, PPT, Images, Videos";
-    cb(new Error("Invalid file type"), false);
+    cb(null, true); // Accept all files by default for flexibility
   }
 };
 
@@ -180,15 +183,36 @@ const uploadDoubtAttachment = multer({
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// UNIVERSAL FILE UPLOAD STORAGE - accepts any file format (for learning materials & assignments)
+// ─────────────────────────────────────────────────────────────────────────────
+const universalFilesStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: process.env.CLOUDINARY_MATERIALS_FOLDER || 'zatAcademy/materials',
+    resource_type: 'auto', // Automatically detect resource type
+  },
+});
+
+// File filter for universal uploads (accepts any file type)
+const universalFileFilter = (req, file, cb) => {
+  // Accept any file type
+  cb(null, true);
+};
+
+const uploadUniversalFile = multer({
+  storage: universalFilesStorage,
+  fileFilter: universalFileFilter,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB for all file types
+  },
+});
+
 // Configure Cloudinary storage for student submission files
 const submissionFilesStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: process.env.CLOUDINARY_SUBMISSIONS_FOLDER || 'zatAcademy/submissions',
-    allowed_formats: [
-      'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'zip',
-      'jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov',
-    ],
     resource_type: 'auto',
   },
 });
@@ -202,6 +226,7 @@ const uploadSubmissionFiles = multer({
 });
 
 // Export new middleware
+exports.uploadUniversalFile = uploadUniversalFile.single("file");
 exports.uploadDoubtAttachments = uploadDoubtAttachment.array('attachments', 5); // Max 5 files
 exports.uploadSubmissionFiles = uploadSubmissionFiles.array('files', 5); // Max 5 files per submission
 

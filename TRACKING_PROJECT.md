@@ -544,3 +544,253 @@ exports.refreshAccessToken = async (req, res) => {
   }
 };
 ```
+---
+RefreshAccesToken
+
+```js
+exports.refreshAccessToken = async (req, res) => {
+  try {
+    // Try to get refresh token from multiple sources (priority order)
+    let refreshToken = 
+      req.cookies[process.env.REFRESH_TOKEN_COOKIE_NAME || "refreshToken"] || // HttpOnly cookie (same-origin)
+      (req.headers.authorization?.startsWith("Bearer ") ? 
+        req.headers.authorization.slice(7) : null) || // Authorization header (cross-origin)
+      req.body?.refreshToken; // Request body (fallback)
+
+    if (!refreshToken) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Refresh token is required. Send it via cookie, Authorization header, or request body." 
+      });
+    }
+
+    // Hash the incoming token to compare with the stored hash
+    const hashed = crypto.createHash("sha256").update(refreshToken).digest("hex");
+
+    const user = await User.findOne({
+      refreshToken: hashed,
+      refreshTokenExpires: { $gt: Date.now() },
+    }).select("+refreshToken +refreshTokenExpires");
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token. Please log in again.",
+      });
+    }
+
+    // ── Rotate: invalidate the old refresh token and issue a fresh pair ──────────
+    const newAccessToken = generateAccessToken(user._id, user.role);
+    const newRefreshToken = user.createRefreshToken(); // overwrites hash + expiry
+    await user.save({ validateBeforeSave: false });
+
+    setTokenCookie(res, newRefreshToken);
+
+    return res.status(200).json({
+      success: true,
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken, // Include for cross-origin scenarios
+    });
+  } catch (error) {
+    console.error("[refreshAccessToken] Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```
+---
+
+```js
+exports.downloadAssignmentFile = async (req, res) => {
+  try {
+    const assignment = await Assignment.findById(req.params.id);
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Assignment not found' });
+    }
+
+    // Must have a stored file to download
+    if (!assignment.file || !assignment.file.url) {
+      return res.status(400).json({
+        success: false,
+        message: 'This assignment has no downloadable file attached',
+      });
+    }
+
+    const downloadData = buildDownloadResponse(assignment.file, assignment.title);
+
+    return res.status(200).json({
+      success: true,
+      data: downloadData,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+```
+---
+Submit Assignment
+
+```js
+exports.submitAssignment = async (req, res) => {
+  try {
+    //1. Extract assignmentId from url - params
+    const { assignmentId } = req.params;
+
+    // Check if assignment exists and is open for submission
+    //2. Find the assignment by it's id
+    const assignment = await Assignment.findById(assignmentId);
+    //3. If there is no assignment return 'Assignment not found'
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assignment not found",
+      });
+    }
+    //4. If assignment is not published or assignment is not active - return 'Assignment is not open for submission'
+    if (!assignment.isPublished || !assignment.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: "Assignment is not open for submission",
+      });
+    }
+    const now = new Date();
+    //5. If today date is less than assignment startDate return - Assignment submission has not started yet
+    if (now < assignment.startDate) {
+      return res.status(400).json({
+        success: false,
+        message: "Assignment submission has not started yet",
+      });
+    }
+    //6. If deadline is passed and there is no allowed late submission or late submission deadline is passed 
+    // return - Assignment submission deadline is passed 
+    if (
+      now > assignment.deadline &&
+      (!assignment.allowLateSubmission || now > assignment.lateSubmissionDeadline)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Assignment submission deadline has passed",
+      });
+    }
+
+    // Check if student has already submitted
+    //7. Find the existing submission with assignment id and login student id
+    const existingSubmission = await Submission.findOne({
+      assignment: assignmentId,
+      student: req.user.id,
+    });
+
+    let submission;
+    const isResubmission = !!existingSubmission;
+
+    if (isResubmission) {
+      // Check if resubmission is allowed
+      if (existingSubmission.status === "graded" && !assignment.allowResubmission) {
+        return res.status(400).json({
+          success: false,
+          message: "Resubmission is not allowed after grading",
+        });
+      }
+
+      // Update existing submission
+      existingSubmission.textContent =
+        req.body.textContent || existingSubmission.textContent;
+      existingSubmission.notes = req.body.notes || existingSubmission.notes;
+      existingSubmission.githubRepo =
+        req.body.githubRepo || existingSubmission.githubRepo;
+      existingSubmission.deploymentUrl =
+        req.body.deploymentUrl || existingSubmission.deploymentUrl;
+      existingSubmission.submittedAt = now;
+      existingSubmission.version += 1;
+      existingSubmission.status = "submitted";
+      existingSubmission.isGraded = false;
+      existingSubmission.gradedAt = null;
+      existingSubmission.gradedBy = null;
+      existingSubmission.score = null;
+      existingSubmission.marksObtained = null;
+      existingSubmission.percentage = null;
+      existingSubmission.grade = null;
+      existingSubmission.feedback = null;
+      existingSubmission.rubricScores = [];
+      existingSubmission.resubmissionCount += 1;
+      existingSubmission.previousSubmission = existingSubmission._id;
+
+      // Handle file uploads
+      if (req.files && req.files.length > 0) {
+        // Delete old files from Cloudinary
+        if (existingSubmission.files && existingSubmission.files.length > 0) {
+          for (const file of existingSubmission.files) {
+            if (file.public_id) {
+              await cloudinary.uploader.destroy(file.public_id);
+            }
+          }
+        }
+
+        existingSubmission.files = req.files.map((file) => ({
+          url: file.path,
+          public_id: file.filename,
+          originalName: file.originalname,
+          size: file.size,
+          mimeType: file.mimetype,
+          uploadedAt: now,
+        }));
+      }
+
+      submission = await existingSubmission.save();
+    } else {
+      // Create new submission
+      const submissionData = {
+        assignment: assignmentId,
+        batch: assignment.batch,
+        course: assignment.course,
+        student: req.user.id,
+        textContent: req.body.textContent,
+        notes: req.body.notes,
+        githubRepo: req.body.githubRepo,
+        deploymentUrl: req.body.deploymentUrl,
+        submittedAt: now,
+        status: "submitted",
+      };
+
+      // Determine submission type
+      if (req.body.textContent && (!req.files || req.files.length === 0)) {
+        submissionData.submissionType = "text";
+      } else if (!req.body.textContent && req.files && req.files.length > 0) {
+        submissionData.submissionType = "file";
+      } else if (req.body.textContent && req.files && req.files.length > 0) {
+        submissionData.submissionType = "both";
+      } else if (req.body.githubRepo) {
+        submissionData.submissionType = "github";
+      }
+
+      // Handle file uploads
+      if (req.files && req.files.length > 0) {
+        submissionData.files = req.files.map((file) => ({
+          url: file.path,
+          public_id: file.filename,
+          originalName: file.originalname,
+          size: file.size,
+          mimeType: file.mimetype,
+          uploadedAt: now,
+        }));
+      }
+
+      submission = await Submission.create(submissionData);
+    }
+
+    res.status(isResubmission ? 200 : 201).json({
+      success: true,
+      message: isResubmission
+        ? "Assignment resubmitted successfully"
+        : "Assignment submitted successfully",
+      data: submission,
+    });
+  } catch (error) {
+    console.log("error: ", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+```

@@ -2,6 +2,12 @@ const Submission = require("../models/Submission");
 const Assignment = require("../models/Assignment");
 const Batch = require("../models/Batch");
 const cloudinary = require("../config/cloudinary");
+const {
+  mimeToResourceType,
+  buildCloudinaryUrl,
+  buildDownloadResponse,
+  buildPreviewResponse,
+} = require("../utils/fileService");
 
 // @desc    Submit assignment
 // @route   POST /api/v1/assignments/:assignmentId/submit
@@ -481,28 +487,6 @@ exports.deleteSubmission = async (req, res) => {
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
-function mimeToResourceType(mimeType = '') {
-  if (!mimeType) return 'raw';
-  if (mimeType.startsWith('image/')) return 'image';
-  if (mimeType.startsWith('video/')) return 'video';
-  return 'raw';
-}
-
-function buildCloudinaryUrl(publicId, resourceType, forDownload, originalName) {
-  const options = {
-    resource_type: resourceType,
-    sign_url: true,
-    expires_at: Math.floor(Date.now() / 1000) + 60 * 60, // 1 hour
-    type: 'upload',
-  };
-
-  if (forDownload && originalName) {
-    options.flags = `attachment:${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  }
-
-  return cloudinary.url(publicId, options);
-}
-
 /**
  * Verify that the requesting user is allowed to access the given submission's files.
  * - Student: only their own submission
@@ -557,24 +541,11 @@ exports.downloadSubmissionFile = async (req, res) => {
     }
 
     const file = submission.files[idx];
-    let downloadUrl;
-
-    if (file.public_id) {
-      const resourceType = mimeToResourceType(file.mimeType);
-      downloadUrl = buildCloudinaryUrl(file.public_id, resourceType, true, file.originalName);
-    } else {
-      downloadUrl = file.url; // fallback
-    }
+    const downloadData = buildDownloadResponse(file, `submission_file_${idx}`);
 
     return res.status(200).json({
       success: true,
-      data: {
-        url: downloadUrl,
-        filename: file.originalName || `file_${idx}`,
-        mimeType: file.mimeType || 'application/octet-stream',
-        size: file.size,
-        expiresIn: 3600,
-      },
+      data: downloadData,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -614,23 +585,11 @@ exports.previewSubmissionFile = async (req, res) => {
     }
 
     const file = submission.files[idx];
-    let previewUrl;
-
-    if (file.public_id) {
-      const resourceType = mimeToResourceType(file.mimeType);
-      previewUrl = buildCloudinaryUrl(file.public_id, resourceType, false, null);
-    } else {
-      previewUrl = file.url;
-    }
+    const previewData = buildPreviewResponse(file, `submission_file_${idx}`);
 
     return res.status(200).json({
       success: true,
-      data: {
-        url: previewUrl,
-        filename: file.originalName || `file_${idx}`,
-        mimeType: file.mimeType || 'application/octet-stream',
-        expiresIn: 3600,
-      },
+      data: previewData,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

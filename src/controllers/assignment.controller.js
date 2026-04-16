@@ -3,12 +3,16 @@ const Batch = require("../models/Batch");
 const Course = require("../models/Course");
 const { sendEmail } = require("../utils/emailService");
 const Enrollment = require("../models/Enrollment");
+const cloudinary = require("../config/cloudinary");
 const mongoose = require("mongoose");
+const {
+  buildDownloadResponse,
+  buildPreviewResponse,
+} = require("../utils/fileService");
 
 // @desc    Create assignment
 // @route   POST /api/v1/batches/:batchId/assignments
 // @access  Private/Instructor
-//TODO: No way to upload files and link (allowSubmission type: text, file, quiz and code)
 exports.createAssignment = async (req, res) => {
   try {
     const { batchId } = req.params;
@@ -46,6 +50,17 @@ exports.createAssignment = async (req, res) => {
       course: batch.course._id,
       createdBy: req.user.id,
     };
+
+    // Handle file upload (resource file for assignment)
+    if (req.file) {
+      assignmentData.file = {
+        url: req.file.path,
+        public_id: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      };
+    }
 
     if (req.body.moduleId) {
       const Module = require("../models/Module");
@@ -363,6 +378,22 @@ exports.updateAssignment = async (req, res) => {
       }
     }
 
+    // Handle file update
+    if (req.file) {
+      // Delete old file from Cloudinary if it exists
+      if (assignment.file && assignment.file.public_id) {
+        await cloudinary.uploader.destroy(assignment.file.public_id);
+      }
+
+      req.body.file = {
+        url: req.file.path,
+        public_id: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      };
+    }
+
     req.body.updatedBy = req.user.id;
 
     const updatedAssignment = await Assignment.findByIdAndUpdate(
@@ -428,6 +459,11 @@ exports.deleteAssignment = async (req, res) => {
         success: false,
         message: "Cannot delete assignment that has submissions",
       });
+    }
+
+    // Delete file from Cloudinary if exists
+    if (assignment.file && assignment.file.public_id) {
+      await cloudinary.uploader.destroy(assignment.file.public_id);
     }
 
     await assignment.deleteOne();
@@ -570,6 +606,67 @@ exports.getAssignmentSubmissions = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+// ── Download assignment file ─────────────────────────────────────────────────────
+// @desc    Generate a signed download URL for an assignment file
+// @route   GET /api/v1/assignments/:id/download
+// @access  Private — enrolled student / instructor / admin
+exports.downloadAssignmentFile = async (req, res) => {
+  try {
+    const assignment = await Assignment.findById(req.params.id);
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Assignment not found' });
+    }
+
+    // Must have a stored file to download
+    if (!assignment.file || !assignment.file.url) {
+      return res.status(400).json({
+        success: false,
+        message: 'This assignment has no downloadable file attached',
+      });
+    }
+
+    const downloadData = buildDownloadResponse(assignment.file, assignment.title);
+
+    return res.status(200).json({
+      success: true,
+      data: downloadData,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ── Preview assignment file ────────────────────────────────────────────────────
+// @desc    Return URL/info needed for inline preview of an assignment file
+// @route   GET /api/v1/assignments/:id/preview
+// @access  Private — enrolled student / instructor / admin
+exports.previewAssignmentFile = async (req, res) => {
+  try {
+    const assignment = await Assignment.findById(req.params.id);
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: 'Assignment not found' });
+    }
+
+    if (!assignment.file || !assignment.file.url) {
+      return res.status(400).json({
+        success: false,
+        message: 'This assignment has no file to preview',
+      });
+    }
+
+    const previewData = buildPreviewResponse(assignment.file, assignment.title);
+
+    return res.status(200).json({
+      success: true,
+      data: previewData,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

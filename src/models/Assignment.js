@@ -107,6 +107,15 @@ const assignmentSchema = new mongoose.Schema(
       },
     ],
 
+    // Assignment resource file (PDF, document, etc. - for instructor to provide)
+    file: {
+      url: String,
+      public_id: String,
+      originalName: String,
+      size: Number,
+      mimeType: String,
+    },
+
     // Grading rubric
     rubric: [
       {

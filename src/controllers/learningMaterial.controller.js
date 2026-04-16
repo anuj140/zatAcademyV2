@@ -1,8 +1,15 @@
-const LearningMaterial = require("../models/LearningMaterial");
-const Batch = require("../models/Batch");
-const Course = require("../models/Course");
 const cloudinary = require("../config/cloudinary");
 const mongoose = require("mongoose");
+const Batch = require("../models/Batch");
+const LearningMaterial = require("../models/LearningMaterial");
+const Module = require("../models/Module");
+const {
+  mimeToResourceType,
+  buildCloudinaryUrl,
+  buildDownloadResponse,
+  buildPreviewResponse,
+  formatFileSize,
+} = require("../utils/fileService");
 
 // @desc    Create learning material
 // @route   POST /api/v1/batches/:batchId/learning-materials
@@ -11,14 +18,19 @@ exports.createLearningMaterial = async (req, res) => {
   try {
     const { batchId } = req.params;
 
-    let jsonPayload = JSON.parse(req.body.jsonData);
-
     // Check batch exists and user is instructor
-    const batch = await Batch.findById(batchId);
+    const batch = await Batch.findById(batchId).populate("course");
     if (!batch) {
       return res.status(404).json({
         success: false,
         message: "Batch not found",
+      });
+    }
+
+    if (!batch.course) {
+      return res.status(404).json({
+        success: false,
+        message: "Associated course not found",
       });
     }
 
@@ -33,15 +45,35 @@ exports.createLearningMaterial = async (req, res) => {
       });
     }
 
-    let materialData = {
-      ...jsonPayload,
+    const materialData = {
+      ...req.body,
       batch: batchId,
-      course: batch.course,
+      course: batch.course._id,
       createdBy: req.user.id,
     };
 
+    // Handle file upload
+    if (req.file) {
+      materialData.file = {
+        url: req.file.path,
+        public_id: req.file.filename,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      };
+
+      // Set material type based on file MIME type
+      materialData.materialType = getMaterialTypeFromMime(req.file.mimetype);
+    }
+
+    // Handle external URL
+    if (req.body.externalUrl) {
+      materialData.materialType = getMaterialTypeFromUrl(req.body.externalUrl);
+      materialData.externalProvider = getProviderFromUrl(req.body.externalUrl);
+    }
+
+    // Handle module assignment
     if (req.body.moduleId) {
-      const Module = require("../models/Module");
       const module = await Module.findOne({
         _id: req.body.moduleId,
         batch: batchId,
@@ -56,39 +88,17 @@ exports.createLearningMaterial = async (req, res) => {
 
       materialData.module = req.body.moduleId;
 
-      // If module is provided, week becomes optional
+      // If module is provided, derive week from module if not explicitly set
       if (!materialData.week && module.weekNumber) {
         materialData.week = module.weekNumber;
       }
     }
 
-    // Handle file upload
-    if (req.file) {
-      materialData.file = {
-        url: req.file.path,
-        public_id: req.file.filename,
-        originalName: req.file.originalname,
-        size: req.file.size,
-        mimeType: req.file.mimetype,
-      };
-
-      // Set material type based on file
-      materialData.materialType = getMaterialTypeFromMime(req.file.mimetype);
-    }
-
-    // Handle external URL
-    if (req.body.externalUrl) {
-      materialData.materialType = getMaterialTypeFromUrl(req.body.externalUrl);
-      materialData.externalProvider = getProviderFromUrl(req.body.externalUrl);
-    }
-
     const material = await LearningMaterial.create(materialData);
 
-    // NEW: Automatically add to module if specified
+    // Automatically add to module if specified
     if (materialData.module) {
-      const Module = require("../models/Module");
       const module = await Module.findById(materialData.module);
-
       await module.addItem({
         itemType: "learning_material",
         itemId: material._id,
@@ -105,7 +115,6 @@ exports.createLearningMaterial = async (req, res) => {
       data: material,
     });
   } catch (error) {
-    console.log("error :", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -457,7 +466,6 @@ exports.getMaterialStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log("error: ", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -470,7 +478,11 @@ function getMaterialTypeFromMime(mimeType) {
   if (mimeType.startsWith("video/")) return "video";
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType.includes("presentation")) return "presentation";
-  if (mimeType.includes("image")) return "image";
+  if (mimeType.includes("image/")) return "image";
+  if (mimeType.includes("audio/")) return "audio";
+  if (mimeType.includes("word") || mimeType.includes("document")) return "document";
+  if (mimeType.includes("sheet") || mimeType.includes("excel")) return "spreadsheet";
+  if (mimeType.includes("compressed") || mimeType.includes("zip")) return "archive";
   return "other";
 }
 
@@ -485,42 +497,6 @@ function getProviderFromUrl(url) {
   if (url.includes("vimeo.com")) return "vimeo";
   if (url.includes("github.com")) return "github";
   return "external";
-}
-
-// ── Helpers shared by download/preview ────────────────────────────────────────
-
-/**
- * Build a signed Cloudinary URL.
- * @param {string} publicId   Cloudinary public_id stored in material.file.public_id
- * @param {string} resourceType  'image' | 'video' | 'raw' — use 'raw' for documents
- * @param {boolean} forDownload  When true adds fl_attachment so browser downloads the file
- * @param {string} originalName  Used as the download filename
- */
-function buildCloudinaryUrl(publicId, resourceType, forDownload, originalName) {
-  const options = {
-    resource_type: resourceType,
-    sign_url: true,
-    expires_at: Math.floor(Date.now() / 1000) + 60 * 60, // 1 hour
-    type: 'upload',
-  };
-
-  if (forDownload && originalName) {
-    // fl_attachment instructs the browser to download the file, not display it
-    options.flags = `attachment:${originalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  }
-
-  return cloudinary.url(publicId, options);
-}
-
-/**
- * Determine Cloudinary resource_type from a MIME type.
- * Cloudinary uses 'raw' for documents (PDF, DOC...) and 'video' for video
- */
-function mimeToResourceType(mimeType = '') {
-  if (!mimeType) return 'raw';
-  if (mimeType.startsWith('image/')) return 'image';
-  if (mimeType.startsWith('video/')) return 'video';
-  return 'raw'; // PDF, DOC, ZIP, TXT, etc.
 }
 
 // ── Download material file ─────────────────────────────────────────────────────
@@ -539,7 +515,14 @@ exports.downloadMaterial = async (req, res) => {
     if (!material.file || !material.file.url) {
       // If it's an external URL redirect to it
       if (material.externalUrl) {
-        return res.redirect(material.externalUrl);
+        return res.status(200).json({
+          success: true,
+          data: {
+            type: 'redirect',
+            url: material.externalUrl,
+            externalProvider: material.externalProvider,
+          },
+        });
       }
       return res.status(400).json({
         success: false,
@@ -547,27 +530,11 @@ exports.downloadMaterial = async (req, res) => {
       });
     }
 
-    const { public_id, mimeType, originalName } = material.file;
-
-    // If public_id exists we can build a proper signed Cloudinary URL
-    let downloadUrl;
-    if (public_id) {
-      const resourceType = mimeToResourceType(mimeType);
-      downloadUrl = buildCloudinaryUrl(public_id, resourceType, true, originalName);
-    } else {
-      // Fallback: use the plain stored URL (won't force download, but still works)
-      downloadUrl = material.file.url;
-    }
+    const downloadData = buildDownloadResponse(material.file, material.title);
 
     return res.status(200).json({
       success: true,
-      data: {
-        url: downloadUrl,
-        filename: originalName || material.title,
-        mimeType: mimeType || 'application/octet-stream',
-        size: material.file.size,
-        expiresIn: 3600, // seconds
-      },
+      data: downloadData,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -607,27 +574,11 @@ exports.previewMaterial = async (req, res) => {
       });
     }
 
-    const { public_id, mimeType, originalName } = material.file;
-
-    // For preview we return plain (non-attachment) URL — browser handles rendering
-    let previewUrl;
-    if (public_id) {
-      const resourceType = mimeToResourceType(mimeType);
-      previewUrl = buildCloudinaryUrl(public_id, resourceType, false, null);
-    } else {
-      previewUrl = material.file.url;
-    }
+    const previewData = buildPreviewResponse(material.file, material.title);
 
     return res.status(200).json({
       success: true,
-      data: {
-        type: 'file',
-        url: previewUrl,
-        mimeType: mimeType || 'application/octet-stream',
-        filename: originalName || material.title,
-        materialType: material.materialType,
-        expiresIn: 3600,
-      },
+      data: previewData,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
