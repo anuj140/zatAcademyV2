@@ -3,10 +3,12 @@
 ## 🎯 Your Problem (Clearly Explained)
 
 You have **two different domains**:
+
 - 🏠 **Auth Domain**: `https://zat-academy-home.onrender.com/auth` (login page)
 - 📊 **App Domain**: `https://zat-academy.onrender.com/student` (dashboard)
 
 ### What Was Happening (The Bug):
+
 ```
 1. User logs in on Auth Domain
 2. Server sets refresh token in httpOnly cookie
@@ -25,6 +27,7 @@ You have **two different domains**:
 ```
 
 ### Why This Happens:
+
 - **Browser security prevents cookies from crossing domains**
 - HttpOnly cookies set on `domain1.com` are NOT sent to requests from `domain2.com`
 - This is intentional (security feature) but breaks your cross-origin flow
@@ -37,6 +40,7 @@ You have **two different domains**:
 
 **1. Modified Login Endpoints**
 All these now return refresh token in response body:
+
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/google/signin`
 - `PUT /api/v1/auth/reset-password/:resetToken`
@@ -44,6 +48,7 @@ All these now return refresh token in response body:
 - `POST /api/v1/auth/setup/complete`
 
 **Response example:**
+
 ```json
 {
   "success": true,
@@ -55,6 +60,7 @@ All these now return refresh token in response body:
 
 **2. Enhanced Refresh Endpoint**
 `POST /api/v1/auth/refresh-token` now accepts refresh token from:
+
 ```javascript
 // Priority 1: HttpOnly cookie (same-origin requests)
 // Priority 2: Authorization header - Bearer <refreshToken> (cross-origin)
@@ -62,6 +68,7 @@ All these now return refresh token in response body:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -155,9 +162,11 @@ Token Expiration & Refresh:
 ## 🔧 What You Need to Do (Frontend)
 
 ### Option A: Full Implementation (Recommended)
+
 Follow: `FRONTEND_IMPLEMENTATION_QUICK_START.md`
 
 **Key points:**
+
 ```javascript
 // 1. Create axios instance with:
 //    - baseURL: 'https://your-api-domain.com'
@@ -166,42 +175,44 @@ Follow: `FRONTEND_IMPLEMENTATION_QUICK_START.md`
 //    - Response interceptor to handle 401 + refresh
 
 // 2. In login handler:
-localStorage.setItem('accessToken', response.accessToken);
-localStorage.setItem('refreshToken', response.refreshToken);
+localStorage.setItem("accessToken", response.accessToken);
+localStorage.setItem("refreshToken", response.refreshToken);
 
 // 3. All other code automatically uses interceptors
 ```
 
 ### Option B: Minimal Changes
+
 If you can't do full interceptor setup:
 
 ```javascript
 // Before each API call:
-const accessToken = localStorage.getItem('accessToken');
+const accessToken = localStorage.getItem("accessToken");
 const config = {
-  headers: { 'Authorization': `Bearer ${accessToken}` },
-  withCredentials: true,  // Important!
+  headers: { Authorization: `Bearer ${accessToken}` },
+  withCredentials: true, // Important!
 };
 const response = await axios.post(url, data, config);
 ```
 
 ### Option C: Manual Refresh
+
 If you need to refresh manually:
 
 ```javascript
 // When getting 401:
-const refreshToken = localStorage.getItem('refreshToken');
+const refreshToken = localStorage.getItem("refreshToken");
 const response = await axios.post(
-  'https://your-api-domain.com/api/v1/auth/refresh-token',
+  "https://your-api-domain.com/api/v1/auth/refresh-token",
   {},
   {
-    headers: { 'Authorization': `Bearer ${refreshToken}` },
+    headers: { Authorization: `Bearer ${refreshToken}` },
     withCredentials: true,
-  }
+  },
 );
 // Store new tokens
-localStorage.setItem('accessToken', response.data.accessToken);
-localStorage.setItem('refreshToken', response.data.refreshToken);
+localStorage.setItem("accessToken", response.data.accessToken);
+localStorage.setItem("refreshToken", response.data.refreshToken);
 ```
 
 ---
@@ -234,26 +245,31 @@ See: `ENVIRONMENT_CONFIG_GUIDE.md` for detailed instructions
 This implementation is secure because:
 
 ✅ **Refresh tokens in localStorage**
+
 - Only stored after successful login
 - Transport layer (HTTPS) protects them
 - HttpOnly cookie provides same protection
 - Better than nothing, acceptable for refresh tokens
 
 ✅ **Using Authorization header**
+
 - Standard OAuth 2.0 approach
 - Not sent automatically (prevents CSRF)
 - Only sent when frontend explicitly adds it
 
 ✅ **Token rotation**
+
 - Each refresh generates new token pair
 - Old tokens immediately invalidated
 - Minimizes exposure window
 
 ✅ **Separate expiry times**
+
 - Access token: 15 min (short, minimal exposure if compromised)
 - Refresh token: 30 days (long, but only used for refresh)
 
 ✅ **CORS validation**
+
 - Only allowed origins can make requests
 - Credentials only sent to trusted domains
 
@@ -290,18 +306,21 @@ This implementation is secure because:
 ## ✨ Next Steps
 
 ### Immediate (Backend is ready):
+
 1. ✅ Backend code updated - all changes in place
 2. ✅ Endpoints returning refreshToken in response
 3. ✅ CORS configured for cross-origin
 4. ⏳ **Update environment variables** (see `ENVIRONMENT_CONFIG_GUIDE.md`)
 
 ### Then (Frontend implementation):
+
 1. Create axios client with interceptors (use template from quick start guide)
 2. Update login handler to store both tokens from response
 3. Test login → redirect → API calls → token refresh
 4. Deploy to production
 
 ### Validation:
+
 - Access tokens working initially ✅
 - After 15 min, auto-refresh happens transparently ✅
 - User stays logged in across origins ✅
@@ -311,13 +330,13 @@ This implementation is secure because:
 
 ## 🐛 Common Issues & Fixes
 
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| 401 on refresh | Token not in header | Add `Authorization: Bearer <token>` |
-| CORS error | Domain not whitelisted | Add to `ALLOWED_ORIGINS` env |
-| Token not stored | Not reading from response | Store `response.refreshToken` after login |
-| Still unauthorized | `withCredentials: false` | Set `withCredentials: true` in axios |
-| Stuck in loop | Refresh logic broken | Add `_retry` flag to prevent retrying forever |
+| Issue              | Cause                     | Fix                                           |
+| ------------------ | ------------------------- | --------------------------------------------- |
+| 401 on refresh     | Token not in header       | Add `Authorization: Bearer <token>`           |
+| CORS error         | Domain not whitelisted    | Add to `ALLOWED_ORIGINS` env                  |
+| Token not stored   | Not reading from response | Store `response.refreshToken` after login     |
+| Still unauthorized | `withCredentials: false`  | Set `withCredentials: true` in axios          |
+| Stuck in loop      | Refresh logic broken      | Add `_retry` flag to prevent retrying forever |
 
 See detailed troubleshooting in `CROSS_ORIGIN_TOKEN_IMPLEMENTATION.md`
 
@@ -328,14 +347,16 @@ See detailed troubleshooting in `CROSS_ORIGIN_TOKEN_IMPLEMENTATION.md`
 **Backend Status**: ✅ Ready  
 **Frontend Status**: ⏳ Needs implementation  
 **Environment**: ⏳ Needs configuration update  
-**Testing**: ⏳ Can start after frontend + env complete  
+**Testing**: ⏳ Can start after frontend + env complete
 
 **Files to Update:**
+
 - Production environment variables (Render dashboard)
 - Frontend auth client (use quick start guide)
 - Any components making API calls (they'll work automatically with interceptor)
 
 **Main Changes:**
+
 - All login responses now include `refreshToken`
 - Refresh endpoint accepts token via `Authorization` header
 - CORS allows cross-origin credentials
@@ -345,6 +366,7 @@ See detailed troubleshooting in `CROSS_ORIGIN_TOKEN_IMPLEMENTATION.md`
 ## 🎓 Understanding the Technology
 
 ### Why cookies alone don't work:
+
 ```
 Browser Security Model:
 - Same-origin policy prevents scripts from accessing cookies across domains
@@ -353,6 +375,7 @@ Browser Security Model:
 ```
 
 ### Why Authorization header solves it:
+
 ```
 OAuth 2.0 Pattern:
 - Credentials sent via HTTP headers (custom, not cookies)
@@ -362,6 +385,7 @@ OAuth 2.0 Pattern:
 ```
 
 ### Why we still use cookies:
+
 ```
 Dual Approach (Best of Both):
 - Cookies: For same-origin requests (browser handles automatically)

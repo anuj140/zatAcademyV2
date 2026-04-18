@@ -19,19 +19,20 @@ Your backend auth endpoints now return an **additional `refreshToken` field** th
 ### 1. Create API Client with Interceptor
 
 **File: `src/api/client.js`**
-```javascript
-import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'https://your-api-domain.com';
+```javascript
+import axios from "axios";
+
+const API_BASE = process.env.REACT_APP_API_URL || "https://your-api-domain.com";
 
 const apiClient = axios.create({
   baseURL: API_BASE,
-  withCredentials: true,  // ← Critical for cross-origin
+  withCredentials: true, // ← Critical for cross-origin
 });
 
 // Request: Add access token to every request
 apiClient.interceptors.request.use((config) => {
-  const accessToken = localStorage.getItem('accessToken');
+  const accessToken = localStorage.getItem("accessToken");
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
@@ -49,8 +50,8 @@ apiClient.interceptors.response.use(
       config._retry = true;
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) throw new Error('No refresh token');
+        const refreshToken = localStorage.getItem("refreshToken");
+        if (!refreshToken) throw new Error("No refresh token");
 
         // Call refresh endpoint
         const { data } = await axios.post(
@@ -59,12 +60,12 @@ apiClient.interceptors.response.use(
           {
             headers: { Authorization: `Bearer ${refreshToken}` },
             withCredentials: true,
-          }
+          },
         );
 
         // Store new tokens
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
+        localStorage.setItem("accessToken", data.accessToken);
+        localStorage.setItem("refreshToken", data.refreshToken);
 
         // Retry original request
         config.headers.Authorization = `Bearer ${data.accessToken}`;
@@ -72,13 +73,13 @@ apiClient.interceptors.response.use(
       } catch (err) {
         // Refresh failed - send to login
         localStorage.clear();
-        window.location.href = 'https://zat-academy-home.onrender.com/auth';
+        window.location.href = "https://zat-academy-home.onrender.com/auth";
         return Promise.reject(err);
       }
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;
@@ -87,29 +88,30 @@ export default apiClient;
 ### 2. Update Login Function
 
 **File: `src/services/auth.js`**
+
 ```javascript
-import apiClient from '../api/client';
+import apiClient from "../api/client";
 
 export const login = async (email, password) => {
-  const { data } = await apiClient.post('/api/v1/auth/login', {
+  const { data } = await apiClient.post("/api/v1/auth/login", {
     email,
     password,
   });
 
   // Store BOTH tokens
-  localStorage.setItem('accessToken', data.accessToken);
-  localStorage.setItem('refreshToken', data.refreshToken);
+  localStorage.setItem("accessToken", data.accessToken);
+  localStorage.setItem("refreshToken", data.refreshToken);
 
   return data;
 };
 
 export const logout = async () => {
   try {
-    await apiClient.post('/api/v1/auth/logout');
+    await apiClient.post("/api/v1/auth/logout");
   } finally {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    window.location.href = 'https://zat-academy-home.onrender.com/auth';
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    window.location.href = "https://zat-academy-home.onrender.com/auth";
   }
 };
 ```
@@ -118,13 +120,13 @@ export const logout = async () => {
 
 ```javascript
 export const googleSignIn = async (idToken) => {
-  const { data } = await apiClient.post('/api/v1/auth/google/signin', {
+  const { data } = await apiClient.post("/api/v1/auth/google/signin", {
     idToken,
   });
 
   // Store BOTH tokens
-  localStorage.setItem('accessToken', data.accessToken);
-  localStorage.setItem('refreshToken', data.refreshToken);
+  localStorage.setItem("accessToken", data.accessToken);
+  localStorage.setItem("refreshToken", data.refreshToken);
 
   return data;
 };
@@ -133,7 +135,7 @@ export const googleSignIn = async (idToken) => {
 ### 4. Use in Your Components
 
 ```javascript
-import apiClient from '../api/client';
+import apiClient from "../api/client";
 
 export function Dashboard() {
   const [data, setData] = useState(null);
@@ -146,10 +148,10 @@ export function Dashboard() {
         // 1. Include access token in Authorization header
         // 2. Auto-refresh if access token expires
         // 3. Retry the request with new token
-        const response = await apiClient.get('/api/v1/student-profiles/me');
+        const response = await apiClient.get("/api/v1/student-profiles/me");
         setData(response.data);
       } catch (err) {
-        console.error('Failed to fetch data:', err);
+        console.error("Failed to fetch data:", err);
       } finally {
         setLoading(false);
       }
@@ -196,10 +198,12 @@ REACT_APP_API_URL=https://your-api-domain.com
 ### Manual Refresh Test:
 
 1. **Login request:**
+
    ```
    POST https://your-api-domain.com/api/v1/auth/login
    Body: { email: "...", password: "..." }
    ```
+
    → Save the `accessToken` and `refreshToken` from response
 
 2. **Refresh request:**
@@ -214,13 +218,17 @@ REACT_APP_API_URL=https://your-api-domain.com
 ## Troubleshooting
 
 ### Q: Still getting 401 after refresh?
+
 **A:** Check:
+
 - ✅ Is `refreshToken` being stored? `console.log(localStorage.getItem('refreshToken'))`
 - ✅ Is Authorization header being sent? Check DevTools → Network tab
 - ✅ Is `withCredentials: true` set on axios? (Important for cookies)
 
 ### Q: Stuck in redirect loop?
+
 **A:** Add safety check:
+
 ```javascript
 // Only refresh once per request
 if (config._retry) {
@@ -230,7 +238,9 @@ if (config._retry) {
 ```
 
 ### Q: Refresh token not being sent?
+
 **A:** Ensure you're using the correct header format:
+
 ```javascript
 // ✅ Correct
 Authorization: Bearer <refreshToken>
@@ -245,12 +255,14 @@ Authorization: Token <refreshToken>
 ## That's It!
 
 Your frontend is now ready for cross-origin token management. The backend handles:
+
 - ✅ Sending refresh token in response
 - ✅ Accepting refresh token via Authorization header
 - ✅ Token rotation (each refresh generates new pair)
 - ✅ CORS properly configured
 
 Your frontend just needs to:
+
 - ✅ Store both tokens
 - ✅ Include access token in every request
 - ✅ Auto-refresh when getting 401

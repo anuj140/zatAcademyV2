@@ -16,8 +16,8 @@ function mimeToResourceType(mimeType = '') {
  * Build a signed Cloudinary URL
  * @param {string} publicId Cloudinary public_id
  * @param {string} resourceType 'image' | 'video' | 'raw'
- * @param {boolean} forDownload If true, adds download query parameter hint
- * @param {string} originalName Original filename
+ * @param {boolean} forDownload If true, prepares for download (adds fl_attachment)
+ * @param {string} originalName Original filename (not appended to URL, used for headers)
  * @returns {string} Signed Cloudinary URL
  */
 function buildCloudinaryUrl(publicId, resourceType, forDownload, originalName) {
@@ -29,17 +29,14 @@ function buildCloudinaryUrl(publicId, resourceType, forDownload, originalName) {
     type: 'upload',
   };
 
-  // Generate the signed URL without any problematic transformations
-  let url = cloudinary.url(publicId, options);
-
-  // For download: add filename hint as query parameter
-  // Cloudinary's CDN respects this for Content-Disposition header
-  if (forDownload && originalName) {
-    const sanitizedName = originalName.replace(/[^a-zA-Z0-9._\- ]/g, '_');
-    // Remove any existing query params and add our download hint
-    const separator = url.includes('?') ? '&' : '?';
-    url += `${separator}dl=${encodeURIComponent(sanitizedName)}`;
+  // For download: add flag to force browser to download instead of render
+  // This tells Cloudinary to set Content-Disposition: attachment header
+  if (forDownload) {
+    options.flags = 'attachment';
   }
+
+  // Generate the signed URL without query parameter manipulation
+  const url = cloudinary.url(publicId, options);
 
   return url;
 }
@@ -164,22 +161,17 @@ function buildDownloadResponse(file, title = 'download') {
     return null;
   }
 
-  const { public_id, mimeType, originalName, size } = file;
+  const { mimeType, originalName, size, url } = file;
 
-  let downloadUrl;
-  if (public_id) {
-    const resourceType = mimeToResourceType(mimeType);
-    downloadUrl = buildCloudinaryUrl(public_id, resourceType, true, originalName);
-  } else {
-    downloadUrl = file.url;
-  }
+  const filename = originalName || title;
 
   return {
-    url: downloadUrl,
-    filename: originalName || title,
+    url: url,
+    filename: filename,
     mimeType: mimeType || 'application/octet-stream',
     size: size,
     expiresIn: 3600, // seconds
+    contentDisposition: `attachment; filename="${filename.replace(/"/g, '\\"')}"`,
   };
 }
 
@@ -194,23 +186,14 @@ function buildPreviewResponse(file, title = 'preview') {
     return null;
   }
 
-  const { public_id, mimeType, originalName } = file;
-
-  let previewUrl;
-  if (public_id) {
-    const resourceType = mimeToResourceType(mimeType);
-    // For preview, don't add attachment flag (let browser render/play it)
-    previewUrl = buildCloudinaryUrl(public_id, resourceType, false, null);
-  } else {
-    previewUrl = file.url;
-  }
+  const { mimeType, originalName, url } = file;
 
   const previewable = isPreviewable(mimeType);
   const extension = getExtensionFromMime(mimeType);
 
   return {
     type: 'file',
-    url: previewUrl,
+    url: url,
     mimeType: mimeType || 'application/octet-stream',
     filename: originalName || title,
     extension: extension,
