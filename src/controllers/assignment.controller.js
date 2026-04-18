@@ -5,10 +5,7 @@ const { sendEmail } = require("../utils/emailService");
 const Enrollment = require("../models/Enrollment");
 const cloudinary = require("../config/cloudinary");
 const mongoose = require("mongoose");
-const {
-  buildDownloadResponse,
-  buildPreviewResponse,
-} = require("../utils/fileService");
+const { buildDownloadResponse, buildPreviewResponse } = require("../utils/fileService");
 
 // @desc    Create assignment
 // @route   POST /api/v1/batches/:batchId/assignments
@@ -129,7 +126,7 @@ exports.createAssignment = async (req, res) => {
 exports.getBatchAssignments = async (req, res) => {
   try {
     const { batchId } = req.params;
-    const { status, week, isPublished = true, limit = 20, page = 1 } = req.query;
+    const { status, week, isPublished, limit = 20, page = 1 } = req.query;
 
     // Build query
     const query = { batch: batchId };
@@ -618,14 +615,14 @@ exports.downloadAssignmentFile = async (req, res) => {
     const assignment = await Assignment.findById(req.params.id);
 
     if (!assignment) {
-      return res.status(404).json({ success: false, message: 'Assignment not found' });
+      return res.status(404).json({ success: false, message: "Assignment not found" });
     }
 
     // Must have a stored file to download
     if (!assignment.file || !assignment.file.url) {
       return res.status(400).json({
         success: false,
-        message: 'This assignment has no downloadable file attached',
+        message: "This assignment has no downloadable file attached",
       });
     }
 
@@ -649,13 +646,13 @@ exports.previewAssignmentFile = async (req, res) => {
     const assignment = await Assignment.findById(req.params.id);
 
     if (!assignment) {
-      return res.status(404).json({ success: false, message: 'Assignment not found' });
+      return res.status(404).json({ success: false, message: "Assignment not found" });
     }
 
     if (!assignment.file || !assignment.file.url) {
       return res.status(400).json({
         success: false,
-        message: 'This assignment has no file to preview',
+        message: "This assignment has no file to preview",
       });
     }
 

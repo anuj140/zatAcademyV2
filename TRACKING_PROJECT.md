@@ -794,3 +794,125 @@ exports.submitAssignment = async (req, res) => {
   }
 };
 ```
+
+
+```js
+exports.getBatchMaterials = async (req, res) => {
+  //1. Extract batchId from url
+  try {
+    const { batchId } = req.params;
+    //2. Extract week, materialType, contentType, isPublished = true, limit, page
+    const {
+      week,
+      materialType,
+      contentType,
+      isPublished = true,
+      limit = 20,
+      page = 1,
+    } = req.query;
+
+    // Build query
+    //3. Store bachId as batch in query obj
+    const query = { batch: batchId };
+
+    // Filter by week if provided
+    //4. If week provided
+    //  - create week property and parse int 
+    if (week) {
+      query.week = parseInt(week);
+    }
+
+    // Filter by material type
+    //5. If materialType provided
+    //  - create materialType with provided value (for material type)
+    if (materialType) {
+      query.materialType = materialType;
+    }
+
+    // Filter by content type
+    //6. If contentType provided
+    //  - create contentType prop and set with provided value
+    if (contentType) {
+      query.contentType = contentType;
+    }
+
+    // For students, only show published materials
+    //7. If role is student role 
+    //  - create isPublised prop and set to true
+    if (req.user.role === "student") {
+      query.isPublished = true;
+
+      // Check availability dates
+      const now = new Date();
+      query.$or = [
+        {
+          $and: [{ availableFrom: { $lte: now } }, { availableUntil: { $gte: now } }],
+        },
+        {
+          $and: [
+            { availableFrom: { $exists: false } },
+            { availableUntil: { $exists: false } },
+          ],
+        },
+        {
+          $and: [
+            { availableFrom: { $lte: now } },
+            { availableUntil: { $exists: false } },
+          ],
+        },
+        {
+          $and: [
+            { availableFrom: { $exists: false } },
+            { availableUntil: { $gte: now } },
+          ],
+        },
+      ];
+    } else {
+      // Instructor/admin can see all, filtered by isPublished if specified
+      if (isPublished !== undefined) {
+        query.isPublished = isPublished === "true";
+      }
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Execute query with sorting
+    const materials = await LearningMaterial.find(query)
+      .sort({ week: 1, moduleOrder: 1, createdAt: 1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate("createdBy", "name");
+
+    const total = await LearningMaterial.countDocuments(query);
+
+    // Get week distribution for navigation
+    const weekDistribution = await LearningMaterial.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$week",
+          count: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ["$materialType", "quiz"] }, 1, 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      count: materials.length,
+      total,
+      pages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      weekDistribution,
+      data: materials,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+```

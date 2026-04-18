@@ -132,7 +132,7 @@ exports.getBatchMaterials = async (req, res) => {
       week,
       materialType,
       contentType,
-      isPublished = true,
+      isPublished,
       limit = 20,
       page = 1,
     } = req.query;
