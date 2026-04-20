@@ -1013,3 +1013,198 @@ exports.getAssignmentSubmissions = async (req, res) => {
   }
 };
 ```
+
+```js
+xports.getAssignmentSubmissionsAnalytics = async (req, res) => {
+  try {
+    //1. Extract assignmentId from url 
+    const { assignmentId } = req.params;
+    //2. Set the default value for limit and page
+    const { limit = 100, page = 1 } = req.query;
+
+    // Get assignment
+    //3. Find the assignment by Id
+    //   -return batch name and instructor and course title
+    const assignment = await Assignment.findById(assignmentId)
+      .populate("batch", "name instructor")
+      .populate("course", "title");
+    //4. If there is no assignment - return 'Assignment not found'
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assignment not found",
+      });
+    }
+
+    // Authorization: Only instructor of the batch, admin, or superAdmin
+    //5. Check if instructor (assigned to batch) is equal to login user or login user role is admin or superAdmin 
+    const isInstructor =
+      assignment.batch.instructor.toString() === req.user.id ||
+      req.user.role === "admin" ||
+      req.user.role === "superAdmin";
+    //6. If instructor is not authorize or login user role is not instructor -- return message 'Not authorized ot view this assignment submission
+    if (!isInstructor && req.user.role !== "instructor") {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view this assignment submissions",
+      });
+    }
+
+    // Get all enrolled students in the batch
+    //7. Find the enrollment by assignment batch id and enrollmentStatus to true
+    const Enrollment = require("../models/Enrollment");
+    const enrolledStudents = await Enrollment.find({
+      batch: assignment.batch._id,
+      enrollmentStatus: "active",
+    })
+      .select("student")
+      .populate("student", "id name email phone");
+    //8. Collect enrollement student ids
+    const studentIds = enrolledStudents.map((e) => e.student._id.toString());
+    //9. Count the total enrolled student
+    const totalStudents = studentIds.length;
+
+    // Get all submissions for this assignment
+    //10. Find the submission by assignment Id
+    const submissions = await Submission.find({
+      assignment: assignmentId,
+    })
+      .select(
+        "student submittedAt isGraded marksObtained percentage status isLate submissionType version files"
+      )
+      .populate("student", "id name email phone");
+
+    // Build submission map for quick lookup
+    //11. Create key by student id by it's submission
+    const submissionMap = {};
+    submissions.forEach((sub) => {
+      submissionMap[sub.student._id.toString()] = sub;
+    });
+
+    // Identify submitted vs pending
+    const submitted = [];
+    const pending = [];
+    //12. Find the 
+    enrolledStudents.forEach((enrollment) => {
+      const studentId = enrollment.student._id.toString();
+      const submission = submissionMap[studentId];
+
+      if (submission) {
+        submitted.push({
+          studentId: enrollment.student._id,
+          name: enrollment.student.name,
+          email: enrollment.student.email,
+          phone: enrollment.student.phone,
+          submittedAt: submission.submittedAt,
+          status: submission.status,
+          isGraded: submission.isGraded,
+          marksObtained: submission.marksObtained,
+          percentage: submission.percentage,
+          isLate: submission.isLate,
+          submissionType: submission.submissionType,
+          version: submission.version,
+          filesCount: submission.files ? submission.files.length : 0,
+          submissionId: submission._id,
+        });
+      } else {
+        pending.push({
+          studentId: enrollment.student._id,
+          name: enrollment.student.name,
+          email: enrollment.student.email,
+          phone: enrollment.student.phone,
+        });
+      }
+    });
+
+    // Calculate statistics
+    const submittedCount = submitted.length;
+    const pendingCount = pending.length;
+    const gradedSubmissions = submitted.filter((s) => s.isGraded);
+    const gradedCount = gradedSubmissions.length;
+    const ungradedCount = submittedCount - gradedCount;
+    const lateSubmissions = submitted.filter((s) => s.isLate);
+    const lateCount = lateSubmissions.length;
+
+    // Calculate scores
+    const scores = gradedSubmissions.map((s) => s.marksObtained || 0);
+    const averageScore =
+      scores.length > 0
+        ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) /
+          100
+        : 0;
+    const highestScore =
+      scores.length > 0 ? Math.max(...scores) : 0;
+    const lowestScore =
+      scores.length > 0 ? Math.min(...scores) : 0;
+
+    // Calculate percentages
+    const submissionRate =
+      totalStudents > 0
+        ? Math.round((submittedCount / totalStudents) * 100)
+        : 0;
+    const gradingRate =
+      submittedCount > 0
+        ? Math.round((gradedCount / submittedCount) * 100)
+        : 0;
+    const lateRate =
+      submittedCount > 0
+        ? Math.round((lateCount / submittedCount) * 100)
+        : 0;
+
+    // Pagination for submitted list
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedSubmitted = submitted.slice(skip, skip + parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        assignment: {
+          _id: assignment._id,
+          title: assignment.title,
+          description: assignment.description,
+          maxMarks: assignment.maxMarks,
+          deadline: assignment.deadline,
+          passingMarks: assignment.passingMarks,
+        },
+        batch: {
+          _id: assignment.batch._id,
+          name: assignment.batch.name,
+        },
+        course: {
+          _id: assignment.course._id,
+          title: assignment.course.title,
+        },
+        analytics: {
+          totalStudents,
+          submittedCount,
+          pendingCount,
+          gradedCount,
+          ungradedCount,
+          lateCount,
+          submissionRate: `${submissionRate}%`,
+          gradingRate: `${gradingRate}%`,
+          lateRate: `${lateRate}%`,
+          averageScore,
+          highestScore,
+          lowestScore,
+        },
+        submissions: {
+          submitted: paginatedSubmitted,
+          submittedTotal: submittedCount,
+          pages: Math.ceil(submittedCount / parseInt(limit)),
+          currentPage: parseInt(page),
+        },
+        pending: {
+          students: pending,
+          total: pendingCount,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error in getAssignmentSubmissionsAnalytics:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+```

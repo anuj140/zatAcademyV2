@@ -5,6 +5,7 @@ const {
   getMySubmission,
   getStudentSubmissions,
   getSubmission,
+  getAssignmentSubmissionsAnalytics,
   updateSubmission,
   deleteSubmission,
   downloadSubmissionFile,
@@ -30,12 +31,15 @@ router.post(
   submitAssignment,
 );
 
-router.get(
-  "/:assignmentId/my-submission",
-  authorize("student"),
-  getMySubmission,
-);
+router.get("/:assignmentId/my-submission", authorize("student"), getMySubmission);
 router.get("/student/submissions", authorize("student"), getStudentSubmissions);
+
+// Instructor analytics
+router.get(
+  "/:assignmentId/submissions-analytics",
+  authorize("instructor", "admin", "superAdmin"),
+  getAssignmentSubmissionsAnalytics,
+);
 
 // Submission CRUD
 router.get("/:id", getSubmission);

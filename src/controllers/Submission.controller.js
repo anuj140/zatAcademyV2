@@ -503,6 +503,185 @@ exports.deleteSubmission = async (req, res) => {
   }
 };
 
+// @desc    Get assignment submissions analytics for instructor
+// @route   GET /api/v1/assignments/:assignmentId/submissions-analytics
+// @access  Private/Instructor
+exports.getAssignmentSubmissionsAnalytics = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    const { limit = 100, page = 1 } = req.query;
+
+    // Get assignment
+    const assignment = await Assignment.findById(assignmentId)
+      .populate("batch", "name instructor")
+      .populate("course", "title");
+
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assignment not found",
+      });
+    }
+
+    // Authorization: Only instructor of the batch, admin, or superAdmin
+    const isInstructor =
+      assignment.batch.instructor.toString() === req.user.id ||
+      req.user.role === "admin" ||
+      req.user.role === "superAdmin";
+
+    if (!isInstructor && req.user.role !== "instructor") {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view this assignment submissions",
+      });
+    }
+
+    // Get all enrolled students in the batch
+    const Enrollment = require("../models/Enrollment");
+    const enrolledStudents = await Enrollment.find({
+      batch: assignment.batch._id,
+      enrollmentStatus: "active",
+    })
+      .select("student")
+      .populate("student", "id name email phone");
+
+    const studentIds = enrolledStudents.map((e) => e.student._id.toString());
+    const totalStudents = studentIds.length;
+
+    // Get all submissions for this assignment
+    const submissions = await Submission.find({
+      assignment: assignmentId,
+    })
+      .select(
+        "student submittedAt isGraded marksObtained percentage status isLate submissionType version files",
+      )
+      .populate("student", "id name email phone");
+
+    // Build submission map for quick lookup
+    const submissionMap = {};
+    submissions.forEach((sub) => {
+      submissionMap[sub.student._id.toString()] = sub;
+    });
+
+    // Identify submitted vs pending
+    const submitted = [];
+    const pending = [];
+
+    enrolledStudents.forEach((enrollment) => {
+      const studentId = enrollment.student._id.toString();
+      const submission = submissionMap[studentId];
+
+      if (submission) {
+        submitted.push({
+          studentId: enrollment.student._id,
+          name: enrollment.student.name,
+          email: enrollment.student.email,
+          phone: enrollment.student.phone,
+          submittedAt: submission.submittedAt,
+          status: submission.status,
+          isGraded: submission.isGraded,
+          marksObtained: submission.marksObtained,
+          percentage: submission.percentage,
+          isLate: submission.isLate,
+          submissionType: submission.submissionType,
+          version: submission.version,
+          filesCount: submission.files ? submission.files.length : 0,
+          submissionId: submission._id,
+        });
+      } else {
+        pending.push({
+          studentId: enrollment.student._id,
+          name: enrollment.student.name,
+          email: enrollment.student.email,
+          phone: enrollment.student.phone,
+        });
+      }
+    });
+
+    // Calculate statistics
+    const submittedCount = submitted.length;
+    const pendingCount = pending.length;
+    const gradedSubmissions = submitted.filter((s) => s.isGraded);
+    const gradedCount = gradedSubmissions.length;
+    const ungradedCount = submittedCount - gradedCount;
+    const lateSubmissions = submitted.filter((s) => s.isLate);
+    const lateCount = lateSubmissions.length;
+
+    // Calculate scores
+    const scores = gradedSubmissions.map((s) => s.marksObtained || 0);
+    const averageScore =
+      scores.length > 0
+        ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+        : 0;
+    const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
+    const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
+
+    // Calculate percentages
+    const submissionRate =
+      totalStudents > 0 ? Math.round((submittedCount / totalStudents) * 100) : 0;
+    const gradingRate =
+      submittedCount > 0 ? Math.round((gradedCount / submittedCount) * 100) : 0;
+    const lateRate =
+      submittedCount > 0 ? Math.round((lateCount / submittedCount) * 100) : 0;
+
+    // Pagination for submitted list
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const paginatedSubmitted = submitted.slice(skip, skip + parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        assignment: {
+          _id: assignment._id,
+          title: assignment.title,
+          description: assignment.description,
+          maxMarks: assignment.maxMarks,
+          deadline: assignment.deadline,
+          passingMarks: assignment.passingMarks,
+        },
+        batch: {
+          _id: assignment.batch._id,
+          name: assignment.batch.name,
+        },
+        course: {
+          _id: assignment.course._id,
+          title: assignment.course.title,
+        },
+        analytics: {
+          totalStudents,
+          submittedCount,
+          pendingCount,
+          gradedCount,
+          ungradedCount,
+          lateCount,
+          submissionRate: `${submissionRate}%`,
+          gradingRate: `${gradingRate}%`,
+          lateRate: `${lateRate}%`,
+          averageScore,
+          highestScore,
+          lowestScore,
+        },
+        submissions: {
+          submitted: paginatedSubmitted,
+          submittedTotal: submittedCount,
+          pages: Math.ceil(submittedCount / parseInt(limit)),
+          currentPage: parseInt(page),
+        },
+        pending: {
+          students: pending,
+          total: pendingCount,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error in getAssignmentSubmissionsAnalytics:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -512,14 +691,14 @@ exports.deleteSubmission = async (req, res) => {
  */
 async function authoriseFileAccess(submission, user) {
   // Student — only own submissions
-  if (user.role === 'student') {
+  if (user.role === "student") {
     return submission.student.toString() === user.id;
   }
   // Admin / superAdmin — full access
-  if (user.role === 'admin' || user.role === 'superAdmin') return true;
+  if (user.role === "admin" || user.role === "superAdmin") return true;
   // Instructor — must be the instructor of that batch
-  if (user.role === 'instructor') {
-    const batch = await Batch.findById(submission.batch).select('instructor');
+  if (user.role === "instructor") {
+    const batch = await Batch.findById(submission.batch).select("instructor");
     return batch && batch.instructor.toString() === user.id;
   }
   return false;
@@ -536,7 +715,7 @@ exports.downloadSubmissionFile = async (req, res) => {
 
     const submission = await Submission.findById(submissionId);
     if (!submission) {
-      return res.status(404).json({ success: false, message: 'Submission not found' });
+      return res.status(404).json({ success: false, message: "Submission not found" });
     }
 
     // Authorisation
@@ -544,12 +723,14 @@ exports.downloadSubmissionFile = async (req, res) => {
     if (!allowed) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to access this submission file',
+        message: "Not authorized to access this submission file",
       });
     }
 
     if (!submission.files || submission.files.length === 0) {
-      return res.status(400).json({ success: false, message: 'This submission has no files' });
+      return res
+        .status(400)
+        .json({ success: false, message: "This submission has no files" });
     }
     if (isNaN(idx) || idx < 0 || idx >= submission.files.length) {
       return res.status(400).json({
@@ -581,19 +762,21 @@ exports.previewSubmissionFile = async (req, res) => {
 
     const submission = await Submission.findById(submissionId);
     if (!submission) {
-      return res.status(404).json({ success: false, message: 'Submission not found' });
+      return res.status(404).json({ success: false, message: "Submission not found" });
     }
 
     const allowed = await authoriseFileAccess(submission, req.user);
     if (!allowed) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to access this submission file',
+        message: "Not authorized to access this submission file",
       });
     }
 
     if (!submission.files || submission.files.length === 0) {
-      return res.status(400).json({ success: false, message: 'This submission has no files' });
+      return res
+        .status(400)
+        .json({ success: false, message: "This submission has no files" });
     }
     if (isNaN(idx) || idx < 0 || idx >= submission.files.length) {
       return res.status(400).json({
