@@ -332,10 +332,28 @@ exports.getSubmission = async (req, res) => {
       }
     }
 
+    // Transform files array to include index and download/preview URLs
+    const filesMetadata = (submission.files || []).map((file, index) => ({
+      index,
+      originalName: file.originalName,
+      size: file.size,
+      mimeType: file.mimeType,
+      uploadedAt: file.uploadedAt || submission.submittedAt,
+      downloadUrl: `/api/v1/submissions/${submission._id}/files/${index}/download`,
+      previewUrl: `/api/v1/submissions/${submission._id}/files/${index}/preview`,
+    }));
+
+    // Prepare response data with enhanced submission object
+    const responseData = {
+      ...submission.toObject(),
+      filesMetadata,
+      filesCount: submission.files ? submission.files.length : 0,
+    };
+
     res.status(200).json({
       success: true,
       data: {
-        submission,
+        submission: responseData,
         comparisonStats,
       },
     });

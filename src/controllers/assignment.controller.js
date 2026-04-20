@@ -586,17 +586,36 @@ exports.getAssignmentSubmissions = async (req, res) => {
 
     const total = await Submission.countDocuments(query);
 
+    // Enhance submissions with file metadata
+    const enhancedSubmissions = submissions.map(submission => {
+      const submissionObj = submission.toObject();
+      
+      // Add file metadata with indices and URLs
+      submissionObj.filesMetadata = (submission.files || []).map((file, index) => ({
+        index,
+        originalName: file.originalName,
+        size: file.size,
+        mimeType: file.mimeType,
+        uploadedAt: file.uploadedAt || submission.submittedAt,
+        downloadUrl: `/api/v1/submissions/${submission._id}/files/${index}/download`,
+        previewUrl: `/api/v1/submissions/${submission._id}/files/${index}/preview`,
+      }));
+      submissionObj.filesCount = submission.files ? submission.files.length : 0;
+      
+      return submissionObj;
+    });
+
     // Get statistics
     const stats = await calculateSubmissionStats(id);
 
     res.status(200).json({
       success: true,
-      count: submissions.length,
+      count: enhancedSubmissions.length,
       total,
       pages: Math.ceil(total / limit),
       currentPage: parseInt(page),
       stats,
-      data: submissions,
+      data: enhancedSubmissions,
     });
   } catch (error) {
     res.status(500).json({

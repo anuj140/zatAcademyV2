@@ -916,3 +916,100 @@ exports.getBatchMaterials = async (req, res) => {
   }
 };
 ```
+```js
+exports.getAssignmentSubmissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, graded, late, limit = 20, page = 1 } = req.query;
+
+    const assignment = await Assignment.findById(id);
+    if (!assignment) {
+      return res.status(404).json({
+        success: false,
+        message: "Assignment not found",
+      });
+    }
+
+    // Check authorization
+    const batch = await Batch.findById(assignment.batch);
+    if (
+      batch.instructor.toString() !== req.user.id &&
+      req.user.role !== "admin" &&
+      req.user.role !== "superAdmin"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to view submissions for this assignment",
+      });
+    }
+
+    // Build query
+    const query = { assignment: id };
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (graded === "true") {
+      query.isGraded = true;
+    } else if (graded === "false") {
+      query.isGraded = false;
+    }
+
+    if (late === "true") {
+      query.isLate = true;
+    } else if (late === "false") {
+      query.isLate = false;
+    }
+
+    // Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const submissions = await Submission.find(query)
+      .sort({ submittedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate("student", "name email")
+      .populate("gradedBy", "name");
+
+    const total = await Submission.countDocuments(query);
+
+    // Enhance submissions with file metadata
+    const enhancedSubmissions = submissions.map(submission => {
+      const submissionObj = submission.toObject();
+      
+      // Add file metadata with indices and URLs
+      submissionObj.filesMetadata = (submission.files || []).map((file, index) => ({
+        index,
+        originalName: file.originalName,
+        size: file.size,
+        mimeType: file.mimeType,
+        uploadedAt: file.uploadedAt || submission.submittedAt,
+        downloadUrl: `/api/v1/submissions/${submission._id}/files/${index}/download`,
+        previewUrl: `/api/v1/submissions/${submission._id}/files/${index}/preview`,
+      }));
+      submissionObj.filesCount = submission.files ? submission.files.length : 0;
+      
+      return submissionObj;
+    });
+
+    // Get statistics
+    const stats = await calculateSubmissionStats(id);
+
+    res.status(200).json({
+      success: true,
+      count: enhancedSubmissions.length,
+      total,
+      pages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
+      stats,
+      data: enhancedSubmissions,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+```
