@@ -131,9 +131,8 @@ gradeSchema.methods.calculateOverallGrade = function() {
 };
 
 // Update timestamp
-gradeSchema.pre('save', function(next) {
+gradeSchema.pre('save', function() {
   this.updatedAt = Date.now();
-  next();
 });
 
 module.exports = mongoose.model('Grade', gradeSchema);

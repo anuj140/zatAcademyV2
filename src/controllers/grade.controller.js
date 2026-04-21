@@ -1,8 +1,9 @@
-const Grade = require('../models/Grade');
-const Submission = require('../models/Submission');
-const Assignment = require('../models/Assignment');
-const Batch = require('../models/Batch');
-const { sendEmail } = require('../utils/emailService');
+const Grade = require("../models/Grade");
+const Submission = require("../models/Submission");
+const Assignment = require("../models/Assignment");
+const Batch = require("../models/Batch");
+const User = require("../models/User");
+const { sendEmail } = require("../utils/emailService");
 
 // @desc    Grade a submission
 // @route   PUT /api/v1/submissions/:id/grade
@@ -11,39 +12,53 @@ exports.gradeSubmission = async (req, res) => {
   try {
     const { id } = req.params;
     const { marksObtained, feedback, rubricScores } = req.body;
-    
+
     const submission = await Submission.findById(id)
-      .populate('assignment', 'maxMarks passingMarks rubric weightage')
-      .populate('student', 'name email');
-    
+      .populate("assignment", "maxMarks passingMarks rubric weightage")
+      .populate("student", "name email");
+
     if (!submission) {
       return res.status(404).json({
         success: false,
-        message: 'Submission not found'
+        message: "Submission not found",
       });
     }
-    
+
     // Check authorization
     const assignment = await Assignment.findById(submission.assignment);
     const batch = await Batch.findById(assignment.batch);
-    
-    if (batch.instructor.toString() !== req.user.id && 
-        req.user.role !== 'admin' && 
-        req.user.role !== 'superAdmin') {
+
+    if (
+      batch.instructor.toString() !== req.user.id &&
+      req.user.role !== "admin" &&
+      req.user.role !== "superAdmin"
+    ) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to grade this submission'
+        message: "Not authorized to grade this submission",
       });
     }
-    
+
+    const grade = await Grade.findOne({
+      student: submission.student,
+      batch: submission.batch,
+    });
+
+    if (grade && grade.isFinalized) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot update grades - they have been finalized",
+      });
+    }
+
     // Validate marks
     if (marksObtained > assignment.maxMarks) {
       return res.status(400).json({
         success: false,
-        message: `Marks cannot exceed maximum marks (${assignment.maxMarks})`
+        message: `Marks cannot exceed maximum marks (${assignment.maxMarks})`,
       });
     }
-    
+
     // Update submission
     submission.marksObtained = marksObtained;
     submission.feedback = feedback;
@@ -51,30 +66,30 @@ exports.gradeSubmission = async (req, res) => {
     submission.isGraded = true;
     submission.gradedAt = new Date();
     submission.gradedBy = req.user.id;
-    submission.status = 'graded';
-    
+    submission.status = "graded";
+
     // Calculate percentage and grade
     submission.calculateGrade(assignment);
-    
+
     await submission.save();
-    
+
     // Update grade record
     await updateGradeRecord(submission, assignment);
-    
+
     // Non-blocking: email failure must not break the grade response
-    sendGradeNotification(submission).catch(err =>
-      console.error('[gradeSubmission] Email notification failed:', err.message)
+    sendGradeNotification(submission).catch((err) =>
+      console.error("[gradeSubmission] Email notification failed:", err.message),
     );
-    
+
     res.status(200).json({
       success: true,
-      message: 'Submission graded successfully',
-      data: submission
+      message: "Submission graded successfully",
+      data: submission,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -86,95 +101,103 @@ exports.bulkGradeSubmissions = async (req, res) => {
   try {
     const { assignmentId } = req.params;
     const { grades } = req.body; // Array of { submissionId, marksObtained, feedback }
-    
+
     if (!grades || !Array.isArray(grades)) {
       return res.status(400).json({
         success: false,
-        message: 'Grades array is required'
+        message: "Grades array is required",
       });
     }
-    
+
     const assignment = await Assignment.findById(assignmentId);
     if (!assignment) {
       return res.status(404).json({
         success: false,
-        message: 'Assignment not found'
+        message: "Assignment not found",
       });
     }
-    
+
     // Check authorization
     const batch = await Batch.findById(assignment.batch);
-    if (batch.instructor.toString() !== req.user.id && 
-        req.user.role !== 'admin' && 
-        req.user.role !== 'superAdmin') {
+    if (
+      batch.instructor.toString() !== req.user.id &&
+      req.user.role !== "admin" &&
+      req.user.role !== "superAdmin"
+    ) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to grade submissions for this assignment'
+        message: "Not authorized to grade submissions for this assignment",
       });
     }
-    
+
     const results = {
       successful: 0,
       failed: 0,
-      errors: []
+      errors: [],
     };
-    
+
     // Grade each submission
     for (const gradeData of grades) {
       try {
-        const submission = await Submission.findById(gradeData.submissionId)
-          .populate('student', 'name email');
-        
+        const submission = await Submission.findById(gradeData.submissionId).populate(
+          "student",
+          "name email",
+        );
+
         if (!submission) {
           results.failed++;
           results.errors.push(`Submission ${gradeData.submissionId} not found`);
           continue;
         }
-        
+
         // Validate marks
         if (gradeData.marksObtained > assignment.maxMarks) {
           results.failed++;
-          results.errors.push(`Marks exceed maximum for submission ${gradeData.submissionId}`);
+          results.errors.push(
+            `Marks exceed maximum for submission ${gradeData.submissionId}`,
+          );
           continue;
         }
-        
+
         // Update submission
         submission.marksObtained = gradeData.marksObtained;
         submission.feedback = gradeData.feedback;
         submission.isGraded = true;
         submission.gradedAt = new Date();
         submission.gradedBy = req.user.id;
-        submission.status = 'graded';
-        
+        submission.status = "graded";
+
         // Calculate percentage and grade
         submission.calculateGrade(assignment);
-        
+
         await submission.save();
-        
+
         // Update grade record
         await updateGradeRecord(submission, assignment);
-        
+
         // Non-blocking: email failure must not break bulk grading
-        sendGradeNotification(submission).catch(err =>
-          console.error('[bulkGradeSubmissions] Email notification failed:', err.message)
+        sendGradeNotification(submission).catch((err) =>
+          console.error("[bulkGradeSubmissions] Email notification failed:", err.message),
         );
-        
+
         results.successful++;
       } catch (error) {
         results.failed++;
-        results.errors.push(`Error grading submission ${gradeData.submissionId}: ${error.message}`);
+        results.errors.push(
+          `Error grading submission ${gradeData.submissionId}: ${error.message}`,
+        );
       }
     }
-    
+
     res.status(200).json({
       success: true,
       message: `Bulk grading completed: ${results.successful} successful, ${results.failed} failed`,
-      data: results
+      data: results,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -185,59 +208,63 @@ exports.bulkGradeSubmissions = async (req, res) => {
 exports.getBatchGrades = async (req, res) => {
   try {
     const { batchId } = req.params;
-    
+
     // Check if user has access to this batch
     const batch = await Batch.findById(batchId);
     if (!batch) {
       return res.status(404).json({
         success: false,
-        message: 'Batch not found'
+        message: "Batch not found",
       });
     }
-    
+
     let grades;
-    
-    if (req.user.role === 'student') {
+
+    if (req.user.role === "student") {
       // Student can only see their own grade
       grades = await Grade.findOne({
         student: req.user.id,
-        batch: batchId
-      }).populate('assignmentGrades.assignment', 'title week maxMarks weightage');
-      
+        batch: batchId,
+      }).populate("assignmentGrades.assignment", "title week maxMarks weightage");
+
       if (!grades) {
         // Create empty grade record if doesn't exist
         grades = await Grade.create({
           student: req.user.id,
           batch: batchId,
-          course: batch.course
+          course: batch.course,
         });
       }
-    } else if (req.user.role === 'instructor' || req.user.role === 'admin' || req.user.role === 'superAdmin') {
+    } else if (
+      req.user.role === "instructor" ||
+      req.user.role === "admin" ||
+      req.user.role === "superAdmin"
+    ) {
       // Instructor/admin can see all grades
       grades = await Grade.find({ batch: batchId })
-        .populate('student', 'name email')
-        .populate('assignmentGrades.assignment', 'title week maxMarks weightage')
+        .populate("student", "name email")
+        .populate("assignmentGrades.assignment", "title week maxMarks weightage")
         .sort({ overallPercentage: -1 });
-      
+
       // Calculate batch statistics
       const batchStats = await calculateBatchGradeStats(batchId);
-      
+
       return res.status(200).json({
         success: true,
         count: grades.length,
         batchStats,
-        data: grades
+        data: grades,
       });
     }
-    
+
     res.status(200).json({
       success: true,
-      data: grades
+      data: grades,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -248,52 +275,55 @@ exports.getBatchGrades = async (req, res) => {
 exports.getStudentGrades = async (req, res) => {
   try {
     // Get all batches the student is enrolled in
-    const Enrollment = require('../models/Enrollment');
+    const Enrollment = require("../models/Enrollment");
     const enrollments = await Enrollment.find({
       student: req.user.id,
-      enrollmentStatus: 'active'
-    }).populate('batch', 'name');
-    
-    const batchIds = enrollments.map(e => e.batch._id);
-    
+      enrollmentStatus: "active",
+    }).populate("batch", "name");
+
+    const batchIds = enrollments.map((e) => e.batch._id);
+
     // Get grades for all batches
     const grades = await Grade.find({
       student: req.user.id,
-      batch: { $in: batchIds }
+      batch: { $in: batchIds },
     })
-      .populate('batch', 'name')
-      .populate('course', 'title');
-    
+      .populate("batch", "name")
+      .populate("course", "title");
+
     // Calculate overall statistics
     const overallStats = {
       totalBatches: batchIds.length,
-      completedBatches: grades.filter(g => g.isFinalized).length,
+      completedBatches: grades.filter((g) => g.isFinalized).length,
       averagePercentage: 0,
-      cumulativeGrade: 'N/A'
+      cumulativeGrade: "N/A",
     };
-    
+
     if (grades.length > 0) {
-      const totalPercentage = grades.reduce((sum, g) => sum + (g.overallPercentage || 0), 0);
+      const totalPercentage = grades.reduce(
+        (sum, g) => sum + (g.overallPercentage || 0),
+        0,
+      );
       overallStats.averagePercentage = totalPercentage / grades.length;
-      
+
       // Determine cumulative grade
-      if (overallStats.averagePercentage >= 90) overallStats.cumulativeGrade = 'A';
-      else if (overallStats.averagePercentage >= 80) overallStats.cumulativeGrade = 'B';
-      else if (overallStats.averagePercentage >= 70) overallStats.cumulativeGrade = 'C';
-      else if (overallStats.averagePercentage >= 60) overallStats.cumulativeGrade = 'D';
-      else overallStats.cumulativeGrade = 'F';
+      if (overallStats.averagePercentage >= 90) overallStats.cumulativeGrade = "A";
+      else if (overallStats.averagePercentage >= 80) overallStats.cumulativeGrade = "B";
+      else if (overallStats.averagePercentage >= 70) overallStats.cumulativeGrade = "C";
+      else if (overallStats.averagePercentage >= 60) overallStats.cumulativeGrade = "D";
+      else overallStats.cumulativeGrade = "F";
     }
-    
+
     res.status(200).json({
       success: true,
       count: grades.length,
       overallStats,
-      data: grades
+      data: grades,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -304,50 +334,52 @@ exports.getStudentGrades = async (req, res) => {
 exports.finalizeBatchGrades = async (req, res) => {
   try {
     const { batchId } = req.params;
-    
+
     // Check authorization
     const batch = await Batch.findById(batchId);
-    if (batch.instructor.toString() !== req.user.id && 
-        req.user.role !== 'admin' && 
-        req.user.role !== 'superAdmin') {
+    if (
+      batch.instructor.toString() !== req.user.id &&
+      req.user.role !== "admin" &&
+      req.user.role !== "superAdmin"
+    ) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to finalize grades for this batch'
+        message: "Not authorized to finalize grades for this batch",
       });
     }
-    
+
     // Get all grades for the batch
     const grades = await Grade.find({ batch: batchId });
-    
+
     // Finalize each grade
     for (const grade of grades) {
       grade.isFinalized = true;
       grade.finalizedAt = new Date();
       grade.finalizedBy = req.user.id;
-      
+
       // Recalculate overall grade
       grade.calculateOverallGrade();
-      
+
       await grade.save();
-      
+
       // Non-blocking: email failure must not break grade finalisation
-      sendFinalGradeNotification(grade).catch(err =>
-        console.error('[finalizeBatchGrades] Email notification failed:', err.message)
+      sendFinalGradeNotification(grade).catch((err) =>
+        console.error("[finalizeBatchGrades] Email notification failed:", err.message),
       );
     }
-    
+
     res.status(200).json({
       success: true,
       message: `Grades finalized for ${grades.length} students`,
       data: {
         finalizedCount: grades.length,
-        batch: batchId
-      }
+        batch: batchId,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -357,24 +389,24 @@ async function updateGradeRecord(submission, assignment) {
   try {
     let grade = await Grade.findOne({
       student: submission.student,
-      batch: submission.batch
+      batch: submission.batch,
     });
-    
+
     if (!grade) {
       grade = await Grade.create({
         student: submission.student,
         batch: submission.batch,
         course: submission.course,
         assignmentsTotal: 0,
-        assignmentsCompleted: 0
+        assignmentsCompleted: 0,
       });
     }
-    
+
     // Update assignment grades
     const assignmentGradeIndex = grade.assignmentGrades.findIndex(
-      ag => ag.assignment.toString() === submission.assignment.toString()
+      (ag) => ag.assignment.toString() === submission.assignment.toString(),
     );
-    
+
     const assignmentGrade = {
       assignment: submission.assignment,
       submission: submission._id,
@@ -383,11 +415,13 @@ async function updateGradeRecord(submission, assignment) {
       percentage: submission.percentage,
       grade: submission.grade,
       weightage: assignment.weightage || 0,
-      weightedScore: assignment.weightage ? (submission.percentage * assignment.weightage) / 100 : 0,
+      weightedScore: assignment.weightage
+        ? (submission.percentage * assignment.weightage) / 100
+        : 0,
       submittedAt: submission.submittedAt,
-      gradedAt: submission.gradedAt
+      gradedAt: submission.gradedAt,
     };
-    
+
     if (assignmentGradeIndex === -1) {
       // Add new assignment grade
       grade.assignmentGrades.push(assignmentGrade);
@@ -396,21 +430,27 @@ async function updateGradeRecord(submission, assignment) {
       // Update existing assignment grade
       grade.assignmentGrades[assignmentGradeIndex] = assignmentGrade;
     }
-    
+
     // Update totals
-    grade.totalScore = grade.assignmentGrades.reduce((sum, ag) => sum + (ag.score || 0), 0);
-    grade.totalMaxScore = grade.assignmentGrades.reduce((sum, ag) => sum + (ag.maxScore || 0), 0);
+    grade.totalScore = grade.assignmentGrades.reduce(
+      (sum, ag) => sum + (ag.score || 0),
+      0,
+    );
+    grade.totalMaxScore = grade.assignmentGrades.reduce(
+      (sum, ag) => sum + (ag.maxScore || 0),
+      0,
+    );
     grade.assignmentsTotal = await Assignment.countDocuments({
       batch: submission.batch,
-      isPublished: true
+      isPublished: true,
     });
-    
+
     // Calculate overall grade
     grade.calculateOverallGrade();
-    
+
     await grade.save();
   } catch (error) {
-    console.error('Error updating grade record:', error);
+    console.error("Error updating grade record:", error);
   }
 }
 
@@ -419,7 +459,7 @@ async function sendGradeNotification(submission) {
   try {
     const assignment = await Assignment.findById(submission.assignment);
     const student = await User.findById(submission.student);
-    
+
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4F46E5;">Assignment Graded</h2>
@@ -430,9 +470,9 @@ async function sendGradeNotification(submission) {
           <li><strong>Marks Obtained:</strong> ${submission.marksObtained} / ${assignment.maxMarks}</li>
           <li><strong>Percentage:</strong> ${submission.percentage?.toFixed(2)}%</li>
           <li><strong>Grade:</strong> ${submission.grade}</li>
-          ${submission.hasPassed ? '<li><strong>Status:</strong> Passed ✅</li>' : '<li><strong>Status:</strong> Failed ❌</li>'}
+          ${submission.hasPassed ? "<li><strong>Status:</strong> Passed ✅</li>" : "<li><strong>Status:</strong> Failed ❌</li>"}
         </ul>
-        ${submission.feedback ? `<p><strong>Feedback:</strong> ${submission.feedback}</p>` : ''}
+        ${submission.feedback ? `<p><strong>Feedback:</strong> ${submission.feedback}</p>` : ""}
         <a href="${process.env.FRONTEND_URL}/submissions/${submission._id}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; margin: 20px 0;">
           View Detailed Feedback
         </a>
@@ -440,14 +480,14 @@ async function sendGradeNotification(submission) {
         <p style="color: #666; font-size: 12px;">AlmaBetter Clone Team</p>
       </div>
     `;
-    
+
     await sendEmail({
       email: student.email,
       subject: `Assignment Graded: ${assignment.title}`,
-      html: emailHtml
+      html: emailHtml,
     });
   } catch (error) {
-    console.error('Error sending grade notification:', error);
+    console.error("Error sending grade notification:", error);
   }
 }
 
@@ -455,8 +495,8 @@ async function sendGradeNotification(submission) {
 async function sendFinalGradeNotification(grade) {
   try {
     const student = await User.findById(grade.student);
-    const batch = await Batch.findById(grade.batch).populate('course', 'title');
-    
+    const batch = await Batch.findById(grade.batch).populate("course", "title");
+
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4F46E5;">Final Grades Published</h2>
@@ -475,21 +515,21 @@ async function sendFinalGradeNotification(grade) {
         <p style="color: #666; font-size: 12px;">AlmaBetter Clone Team</p>
       </div>
     `;
-    
+
     await sendEmail({
       email: student.email,
       subject: `Final Grades Published: ${batch.course.title}`,
-      html: emailHtml
+      html: emailHtml,
     });
   } catch (error) {
-    console.error('Error sending final grade notification:', error);
+    console.error("Error sending final grade notification:", error);
   }
 }
 
 // Helper function to calculate batch grade statistics
 async function calculateBatchGradeStats(batchId) {
   const grades = await Grade.find({ batch: batchId, isFinalized: true });
-  
+
   if (grades.length === 0) {
     return {
       averagePercentage: 0,
@@ -497,36 +537,36 @@ async function calculateBatchGradeStats(batchId) {
       lowestPercentage: 0,
       gradeDistribution: { A: 0, B: 0, C: 0, D: 0, F: 0 },
       totalStudents: 0,
-      finalizedStudents: 0
+      finalizedStudents: 0,
     };
   }
-  
-  const percentages = grades.map(g => g.overallPercentage || 0);
+
+  const percentages = grades.map((g) => g.overallPercentage || 0);
   const averagePercentage = percentages.reduce((a, b) => a + b, 0) / percentages.length;
   const highestPercentage = Math.max(...percentages);
   const lowestPercentage = Math.min(...percentages);
-  
+
   const gradeDistribution = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-  grades.forEach(grade => {
-    const finalGrade = grade.finalGrade || 'F';
+  grades.forEach((grade) => {
+    const finalGrade = grade.finalGrade || "F";
     if (gradeDistribution[finalGrade] !== undefined) {
       gradeDistribution[finalGrade]++;
     }
   });
-  
+
   // Get total students in batch
-  const Enrollment = require('../models/Enrollment');
+  const Enrollment = require("../models/Enrollment");
   const totalStudents = await Enrollment.countDocuments({
     batch: batchId,
-    enrollmentStatus: 'active'
+    enrollmentStatus: "active",
   });
-  
+
   return {
     averagePercentage: Math.round(averagePercentage * 100) / 100,
     highestPercentage: Math.round(highestPercentage * 100) / 100,
     lowestPercentage: Math.round(lowestPercentage * 100) / 100,
     gradeDistribution,
     totalStudents,
-    finalizedStudents: grades.length
+    finalizedStudents: grades.length,
   };
 }
