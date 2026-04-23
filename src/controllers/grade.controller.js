@@ -73,8 +73,12 @@ exports.gradeSubmission = async (req, res) => {
 
     await submission.save();
 
-    // Update grade record
-    await updateGradeRecord(submission, assignment);
+    // Update grade record - MUST await to ensure grade is updated before responding
+    try {
+      await updateGradeRecord(submission, assignment);
+    } catch (gradeError) {
+      console.error("[gradeSubmission] Error updating grade record:", gradeError);
+    }
 
     // Non-blocking: email failure must not break the grade response
     sendGradeNotification(submission).catch((err) =>
@@ -173,7 +177,14 @@ exports.bulkGradeSubmissions = async (req, res) => {
         await submission.save();
 
         // Update grade record
-        await updateGradeRecord(submission, assignment);
+        try {
+          await updateGradeRecord(submission, assignment);
+        } catch (gradeError) {
+          console.error(
+            `[bulkGradeSubmissions] Error updating grade for submission ${gradeData.submissionId}:`,
+            gradeError,
+          );
+        }
 
         // Non-blocking: email failure must not break bulk grading
         sendGradeNotification(submission).catch((err) =>
@@ -362,6 +373,8 @@ exports.finalizeBatchGrades = async (req, res) => {
 
       await grade.save();
 
+      console.log("grade: ", grade);
+
       // Non-blocking: email failure must not break grade finalisation
       sendFinalGradeNotification(grade).catch((err) =>
         console.error("[finalizeBatchGrades] Email notification failed:", err.message),
@@ -399,6 +412,7 @@ async function updateGradeRecord(submission, assignment) {
         course: submission.course,
         assignmentsTotal: 0,
         assignmentsCompleted: 0,
+        assignmentGrades: [],
       });
     }
 
@@ -431,6 +445,9 @@ async function updateGradeRecord(submission, assignment) {
       grade.assignmentGrades[assignmentGradeIndex] = assignmentGrade;
     }
 
+    // CRITICAL: Mark nested array as modified so Mongoose persists it
+    grade.markModified("assignmentGrades");
+
     // Update totals
     grade.totalScore = grade.assignmentGrades.reduce(
       (sum, ag) => sum + (ag.score || 0),
@@ -440,17 +457,28 @@ async function updateGradeRecord(submission, assignment) {
       (sum, ag) => sum + (ag.maxScore || 0),
       0,
     );
+
+    // Get actual total assignments for the batch
     grade.assignmentsTotal = await Assignment.countDocuments({
       batch: submission.batch,
       isPublished: true,
     });
 
-    // Calculate overall grade
+    // Calculate overall grade AFTER all updates
     grade.calculateOverallGrade();
+
+    // Mark fields as modified if they were calculated
+    grade.markModified("totalScore");
+    grade.markModified("totalMaxScore");
+    grade.markModified("overallPercentage");
+    grade.markModified("finalGrade");
+    grade.markModified("assignmentsCompleted");
+    grade.markModified("assignmentsTotal");
 
     await grade.save();
   } catch (error) {
     console.error("Error updating grade record:", error);
+    throw error;
   }
 }
 
