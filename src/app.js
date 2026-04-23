@@ -28,6 +28,7 @@ const studentProfileRoutes = require("./routes/studentProfile.routes"); // NEW
 const emailTemplateRoutes = require("./routes/emailTemplate.routes"); // NEW
 const broadcastRoutes = require("./routes/broadcast.routes"); // NEW
 const notificationRoutes = require("./routes/notification.routes"); // NEW
+const instructorRatingRoutes = require("./routes/instructorRating.routes"); // NEW
 
 const app = express();
 
@@ -56,9 +57,9 @@ app.use(cookieParser());
 // app.use(xss());
 
 // Enable CORS
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map((o) => o.trim().replace(/\/$/, '')); // strip trailing slashes
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, "")); // strip trailing slashes
 
 app.use(
   cors({
@@ -69,9 +70,9 @@ app.use(
       callback(new Error(`CORS: origin '${origin}' is not allowed`));
     },
     credentials: true, // required so the browser sends the refreshToken cookie
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
 );
 
 // Mount routers
@@ -94,6 +95,7 @@ app.use("/api/v1/student-profiles", studentProfileRoutes); // NEW
 app.use("/api/v1/email-templates", emailTemplateRoutes); // NEW
 app.use("/api/v1/broadcasts", broadcastRoutes); // NEW
 app.use("/api/v1/notifications", notificationRoutes); // NEW
+app.use("/api/v1/instructor-ratings", instructorRatingRoutes); // NEW
 
 // Health check route
 app.get("/health", (req, res) => {
