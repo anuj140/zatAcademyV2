@@ -194,13 +194,15 @@ exports.getBatchAssignments = async (req, res) => {
     }
 
     // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const normalizedPage = Math.max(parseInt(page) || 1, 1);
+    const normalizedLimit = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
+    const skip = (normalizedPage - 1) * normalizedLimit;
 
     // Execute query
     const assignments = await Assignment.find(query)
       .sort({ deadline: 1, createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(normalizedLimit);
 
     const total = await Assignment.countDocuments(query);
 
@@ -575,12 +577,14 @@ exports.getAssignmentSubmissions = async (req, res) => {
     }
 
     // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const normalizedPage = Math.max(parseInt(page) || 1, 1);
+    const normalizedLimit = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
+    const skip = (normalizedPage - 1) * normalizedLimit;
 
     const submissions = await Submission.find(query)
       .sort({ submittedAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(normalizedLimit)
       .populate("student", "name email")
       .populate("gradedBy", "name");
 

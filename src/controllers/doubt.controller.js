@@ -55,6 +55,20 @@ exports.createDoubt = async (req, res) => {
     // Get batch and course info
     const batch = await Batch.findById(batchId).populate("course instructor");
 
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        message: "Batch not found",
+      });
+    }
+
+    if (!batch.course) {
+      return res.status(500).json({
+        success: false,
+        message: "Batch course reference not found",
+      });
+    }
+
     // Create doubt
     const doubtData = {
       title,
@@ -97,8 +111,10 @@ exports.createDoubt = async (req, res) => {
 
     const doubt = await Doubt.create(doubtData);
 
-    // Send notification to instructor
-    await sendDoubtNotification(doubt, batch, "created");
+    // Send notification to instructor (non-blocking)
+    sendDoubtNotification(doubt, batch, "created").catch(err =>
+      console.error("[createDoubt] Email notification failed:", err.message)
+    );
 
     // Add student as follower
     doubt.followers.push(req.user.id);
@@ -247,13 +263,15 @@ exports.getBatchDoubts = async (req, res) => {
     }
 
     // Pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const normalizedPage = Math.max(parseInt(page) || 1, 1);
+    const normalizedLimit = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
+    const skip = (normalizedPage - 1) * normalizedLimit;
 
     // Execute query
     const doubts = await Doubt.find(query)
       .sort({ isPinned: -1, createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(normalizedLimit)
       .populate("student", "name email")
       .populate("replies.user", "name email role");
 

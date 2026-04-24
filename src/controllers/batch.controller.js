@@ -105,14 +105,19 @@ exports.getBatches = async (req, res) => {
 // @access  Private
 exports.getBatch = async (req, res) => {
   try {
-    console.log("getBatch controller is called!");
     const batch = await Batch.findById(req.params.id).populate("course instructor");
-    console.log("batch: ", batch);
 
     if (!batch) {
       return res.status(404).json({
         success: false,
         message: "Batch not found",
+      });
+    }
+
+    if (!batch.course || !batch.instructor) {
+      return res.status(500).json({
+        success: false,
+        message: "Batch references (course/instructor) not found",
       });
     }
 
@@ -295,7 +300,9 @@ exports.getBatchesByCourse = async (req, res) => {
 
     const batches = await Batch.find(filter)
       .populate("instructor", "name email")
-      .select("name startDate endDate schedule maxStudents currentStudents isActive isFull instructor createdAt")
+      .select(
+        "name startDate endDate schedule maxStudents currentStudents isActive isFull instructor createdAt",
+      )
       .sort("startDate");
 
     res.status(200).json({

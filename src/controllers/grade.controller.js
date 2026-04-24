@@ -570,6 +570,18 @@ async function calculateBatchGradeStats(batchId) {
   }
 
   const percentages = grades.map((g) => g.overallPercentage || 0);
+  
+  if (percentages.length === 0) {
+    return {
+      averagePercentage: 0,
+      highestPercentage: 0,
+      lowestPercentage: 0,
+      gradeDistribution: { A: 0, B: 0, C: 0, D: 0, F: 0 },
+      totalStudents: 0,
+      finalizedStudents: 0,
+    };
+  }
+  
   const averagePercentage = percentages.reduce((a, b) => a + b, 0) / percentages.length;
   const highestPercentage = Math.max(...percentages);
   const lowestPercentage = Math.min(...percentages);

@@ -7,9 +7,9 @@ const Notification = require("../models/Notification");
  */
 exports.getMyNotifications = async (req, res) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
-    const startIndex = (page - 1) * limit;
+    const normalizedPage = Math.max(parseInt(req.query.page) || 1, 1);
+    const normalizedLimit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100);
+    const startIndex = (normalizedPage - 1) * normalizedLimit;
 
     const query = { recipient: req.user._id };
     
@@ -23,16 +23,16 @@ exports.getMyNotifications = async (req, res) => {
       .populate("broadcast", "title message type createdAt")
       .sort({ createdAt: -1 })
       .skip(startIndex)
-      .limit(limit);
+      .limit(normalizedLimit);
 
     res.status(200).json({
       success: true,
       count: notifications.length,
       pagination: {
-        page,
-        limit,
+        page: normalizedPage,
+        limit: normalizedLimit,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / normalizedLimit),
       },
       data: notifications,
     });

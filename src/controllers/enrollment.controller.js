@@ -137,6 +137,13 @@ exports.enrollInBatch = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Batch not found or not active" });
     }
+    
+    if (!batch.course) {
+      return res
+        .status(500)
+        .json({ success: false, message: "Batch course reference not found" });
+    }
+    
     if (batch.isFull) {
       return res.status(400).json({ success: false, message: "Batch is already full" });
     }

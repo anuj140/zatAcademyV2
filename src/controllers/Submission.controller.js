@@ -97,7 +97,11 @@ exports.submitAssignment = async (req, res) => {
         if (existingSubmission.files && existingSubmission.files.length > 0) {
           for (const file of existingSubmission.files) {
             if (file.public_id) {
-              await cloudinary.uploader.destroy(file.public_id);
+              try {
+                await cloudinary.uploader.destroy(file.public_id);
+              } catch (cloudinaryErr) {
+                console.error(`[submitAssignment] Failed to delete file ${file.public_id}:`, cloudinaryErr.message);
+              }
             }
           }
         }
