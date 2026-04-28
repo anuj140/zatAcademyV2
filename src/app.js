@@ -29,6 +29,8 @@ const emailTemplateRoutes = require("./routes/emailTemplate.routes"); // NEW
 const broadcastRoutes = require("./routes/broadcast.routes"); // NEW
 const notificationRoutes = require("./routes/notification.routes"); // NEW
 const instructorRatingRoutes = require("./routes/instructorRating.routes"); // NEW
+const courseRatingRoutes = require("./routes/courseRating.routes"); // NEW
+
 
 const app = express();
 
@@ -96,6 +98,7 @@ app.use("/api/v1/email-templates", emailTemplateRoutes); // NEW
 app.use("/api/v1/broadcasts", broadcastRoutes); // NEW
 app.use("/api/v1/notifications", notificationRoutes); // NEW
 app.use("/api/v1/instructor-ratings", instructorRatingRoutes); // NEW
+app.use("/api/v1/course-ratings", courseRatingRoutes); // NEW
 
 // Health check route
 app.get("/health", (req, res) => {
