@@ -64,6 +64,10 @@ router.get(
 // @desc    Get all ratings for batch (admin view)
 // @query   page (optional, default: 1), limit (optional, default: 20)
 // @access  Private/Admin/SuperAdmin
-router.get("/batch/:batchId", authorize("admin", "superAdmin"), getBatchRatings);
+router.get(
+  "/batch/:batchId",
+  authorize("admin", "superAdmin", "instructor"),
+  getBatchRatings,
+);
 
 module.exports = router;

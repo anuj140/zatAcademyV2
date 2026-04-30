@@ -490,7 +490,7 @@ exports.getBatchRatings = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Check authorization - only admin/superAdmin can view batch ratings
-    if (req.user.role !== "admin" && req.user.role !== "superAdmin") {
+    if (req.user.role !== "admin" && req.user.role !== "superAdmin" && req.user.role !== 'instructor') {
       return res.status(403).json({
         success: false,
         message: "Not authorized to view batch ratings",
